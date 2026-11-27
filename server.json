@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.henizmik-cyber/1sense-mcp",
+  "description": "German property data for AI agents: parcels, land values and company register for all of NRW.",
+  "repository": {
+    "url": "https://github.com/henizmik-cyber/1sense-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "websiteUrl": "https://1sensedata.com",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://1sensedata.com/mcp"
+    }
+  ]
+}
