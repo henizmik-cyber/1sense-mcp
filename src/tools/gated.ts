@@ -84,14 +84,22 @@ export async function companyProperties(
   let companyId = args.company_id ?? null;
   let companyName: string | null = null;
   if (!companyId && args.name) {
-    const row = await ctx.env.DB.prepare(
-      "SELECT id, name FROM companies WHERE name LIKE ?1 COLLATE NOCASE LIMIT 1",
-    )
-      .bind(`%${args.name.trim()}%`)
-      .first<{ id: string; name: string }>();
-    if (row) {
-      companyId = row.id;
-      companyName = row.name;
+    // Full-table LIKE over ~5M names; D1 can transiently fail under load.
+    // A gated tool's honest fallback is the locked preview, never a 500.
+    try {
+      const row = await ctx.env.DB.prepare(
+        "SELECT id, name FROM companies WHERE name LIKE ?1 COLLATE NOCASE LIMIT 1",
+      )
+        .bind(`%${args.name.trim()}%`)
+        .first<{ id: string; name: string }>();
+      if (row) {
+        companyId = row.id;
+        companyName = row.name;
+      }
+    } catch {
+      return locked(
+        "Property-ownership lookups run for early-access users. Pass `company_id` from find_company for a structured preview.",
+      );
     }
   }
 
