@@ -6,10 +6,18 @@ import { findCompany } from "./companies.js";
 import { companyProperties, getOwnerChain } from "./gated.js";
 import { requestAccess } from "./access.js";
 
+export interface ToolAnnotations {
+  title: string;
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+}
+
 export interface ToolDef {
   name: string;
   description: string;
   schema: ZodRawShape;
+  annotations: ToolAnnotations;
   /** request_access must work even when the anonymous budget is used up. */
   rateLimitExempt?: boolean;
   handler: (ctx: ToolContext, args: never) => Promise<unknown>;
@@ -18,6 +26,7 @@ export interface ToolDef {
 export const TOOLS: ToolDef[] = [
   {
     name: "search_parcels",
+    annotations: { title: "Search parcels", readOnlyHint: true },
     description:
       "Search German land parcels (Flurstücke) by city or bounding box, with optional size filters. Coverage v1: all of NRW. Returns parcel ids, sizes, municipality, centroid and map links.",
     schema: {
@@ -42,6 +51,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "get_parcel",
+    annotations: { title: "Get parcel details", readOnlyHint: true },
     description:
       "Look up one parcel by Flurstückskennzeichen: geometry (GeoJSON), size, Gemarkung/Flur, approximate neighbors, map link. Coverage v1: NRW.",
     schema: {
@@ -53,6 +63,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "get_bodenrichtwert",
+    annotations: { title: "Get Bodenrichtwert (land value)", readOnlyHint: true },
     description:
       "Official standard land value (Bodenrichtwert) for a parcel id or WGS84 point: EUR/m², Stichtag (Stand), Nutzungsart. Source: BORIS-NRW. Coverage v1: NRW.",
     schema: {
@@ -64,6 +75,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "find_company",
+    annotations: { title: "Find company", readOnlyHint: true },
     description:
       "Find German companies by name or register number (e.g. HRB). Returns register court, seat, status, purpose, SPV indicator, officers (legal entities only — natural persons are never returned) and related entities by name pattern.",
     schema: {
@@ -73,6 +85,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "estimate_buildable",
+    annotations: { title: "Estimate buildable area", readOnlyHint: true },
     description:
       "Rough gross-floor-area estimate for a parcel from default GRZ/floor values. Clearly labeled estimate; v1 has no zoning or LoD2 height data. Coverage v1: NRW.",
     schema: {
@@ -82,6 +95,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "get_owner_chain",
+    annotations: { title: "Get owner chain (early access)", readOnlyHint: true },
     description:
       "Ownership chain for a parcel (owner entity, intermediate holdings). Early-access feature: returns a locked preview with counts and structure depth — never personal data.",
     schema: {
@@ -91,6 +105,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "company_properties",
+    annotations: { title: "Company property holdings (early access)", readOnlyHint: true },
     description:
       "Properties held by a company. Early-access feature: returns a locked preview (property count + cities only).",
     schema: {
@@ -101,6 +116,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "request_access",
+    annotations: { title: "Request early access", readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     description:
       "Request early access to 1Sense Data: owner chains, company-property links and higher rate limits. Takes your email and use case, records the request, returns a confirmation.",
     schema: {

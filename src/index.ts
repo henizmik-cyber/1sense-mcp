@@ -18,7 +18,7 @@ export class OneSenseMcp extends McpAgent<Env, unknown, SessionProps> {
 
   async init(): Promise<void> {
     for (const def of TOOLS) {
-      this.server.tool(def.name, def.description, def.schema, async (args) => {
+      this.server.tool(def.name, def.description, def.schema, def.annotations, async (args) => {
         const ctx: ToolContext = {
           env: this.env,
           ip: this.props?.ip ?? "unknown",
