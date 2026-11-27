@@ -116,6 +116,27 @@ class SqlChunkWriter:
         return self._file_idx
 
 
+class NdjsonWriter:
+    """Appends one GeoJSON Feature per line — the input format for tippecanoe."""
+
+    def __init__(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = open(path, "w", encoding="utf-8")
+        self.count = 0
+
+    def add(self, properties: dict, geometry) -> None:
+        json.dump(
+            {"type": "Feature", "properties": properties, "geometry": geometry},
+            self._fh, ensure_ascii=False, separators=(",", ":"),
+        )
+        self._fh.write("\n")
+        self.count += 1
+
+    def close(self) -> int:
+        self._fh.close()
+        return self.count
+
+
 def write_geojson(path: Path, obj) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:

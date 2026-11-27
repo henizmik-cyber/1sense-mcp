@@ -22,7 +22,7 @@ from pathlib import Path
 
 import requests
 
-from common import SqlChunkWriter, pick_column, round_coords, write_geojson
+from common import NdjsonWriter, SqlChunkWriter, pick_column, round_coords, write_geojson
 
 BRW_URL = (
     "https://www.opengeodata.nrw.de/produkte/infrastruktur_bauen_wohnen/boris/"
@@ -126,6 +126,7 @@ def main() -> None:
 
     out = Path(args.out)
     sql = SqlChunkWriter(out / "sql", "brw", "bodenrichtwerte", BRW_COLUMNS)
+    ndjson = NdjsonWriter(out / "tiles" / "brw.ndjson")
     bounds = gdf.bounds
     count = 0
     seen_ids: set[str] = set()
@@ -142,6 +143,17 @@ def main() -> None:
             continue  # no parseable value, no row — never guess
 
         b = bounds.loc[idx]
+        geometry = round_coords(row.geometry.__geo_interface__, 6)
+        # Tile input: geometry plus what the legend / hover shows.
+        ndjson.add(
+            {
+                "zone_id": zone_id,
+                "brw_eur_m2": round(brw, 2),
+                "nutzungsart": (str(row[nutz_col]) if nutz_col and row[nutz_col] is not None else None),
+                "stand": normalize_stand(row[stand_col]) if stand_col else None,
+            },
+            geometry,
+        )
         geom_key = f"geo/brw/{zone_id}.json"
         sql.add([
             zone_id,
@@ -159,7 +171,7 @@ def main() -> None:
             {
                 "type": "Feature",
                 "properties": {"zone_id": zone_id},
-                "geometry": round_coords(row.geometry.__geo_interface__, 6),
+                "geometry": geometry,
             },
         )
         count += 1
@@ -167,8 +179,10 @@ def main() -> None:
             print(f"  {count} zones…")
 
     files = sql.close()
+    tile_count = ndjson.close()
     print(f"\nDone: {count} BRW zones -> {files} SQL file(s), geometry under "
-          f"{out / 'r2' / 'geo' / 'brw'}")
+          f"{out / 'r2' / 'geo' / 'brw'}, {tile_count} tile features in "
+          f"{out / 'tiles' / 'brw.ndjson'}")
 
 
 if __name__ == "__main__":

@@ -24,7 +24,9 @@
     { "pattern": "1sensedata.com/access*", "zone_name": "1sensedata.com" },
     { "pattern": "www.1sensedata.com/access*", "zone_name": "1sensedata.com" },
     { "pattern": "1sensedata.com/mcp*", "zone_name": "1sensedata.com" },
-    { "pattern": "www.1sensedata.com/mcp*", "zone_name": "1sensedata.com" }
+    { "pattern": "www.1sensedata.com/mcp*", "zone_name": "1sensedata.com" },
+    { "pattern": "1sensedata.com/map*", "zone_name": "1sensedata.com" },
+    { "pattern": "www.1sensedata.com/map*", "zone_name": "1sensedata.com" }
   ],
   // No workers.dev URL: the public endpoint is 1sensedata.com/mcp.
   "workers_dev": false,

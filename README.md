@@ -79,6 +79,46 @@ traces). Gated tools return `{ status: "locked", preview, unlock }`.
 personal data, on any code path. Officer lists are filtered to legal entities;
 owner-chain previews carry counts and structure depth only.
 
+## Map explorer
+
+`https://1sensedata.com/map` — the product's visible face: a full-bleed
+MapLibre map of all NRW parcels and Bodenrichtwert zones in the 1Sense
+ink-on-paper look. Every parcel click shows open facts plus the locked owner
+card that funnels to `/access`. No personal data is rendered anywhere.
+
+- **Views:** Karte (OpenFreeMap Liberty, recolored client-side to the sand
+  palette) and Satellit (Geobasis NRW DOP WMTS, dl-de/zero-2.0; its tile
+  matrix identifiers are web zoom − 5, mapped in `transformRequest`).
+- **Vector tiles:** three PMTiles files in R2 (`tiles/parcels.pmtiles` z13–16,
+  `tiles/brw.pmtiles` z8–14, `tiles/buildings.pmtiles` z13–16), built by
+  tippecanoe from the ingest pipeline's NDJSON output (`out/tiles/*.ndjson`)
+  and served by the Worker's range proxy `GET /map/tiles/{file}`.
+- **3D buildings:** official LoD2 models (footprint + measured height,
+  `ingest_lod2.py` streams the ~220 GB CityGML kachel set), rendered as
+  fill-extrusions behind the 3D chip, which also pitches the camera.
+- **Parcel facts:** `GET /map/api/parcel?id=` reuses the MCP tool logic
+  (D1 lookup + BRW point-in-polygon). Rate limits: tile reads are unlimited
+  (static range reads); the parcel API has its own budget of 300 lookups per
+  day per IP (`MAP_API_DAILY_LIMIT`), counted under a `map:`-prefixed key so
+  map use never consumes the MCP tool budget (10/day anonymous) or vice versa.
+
+Build & upload the tilesets after an ingest run:
+
+```bash
+cd scripts/ingest
+tippecanoe -o out/tiles/parcels.pmtiles -l parcels -Z13 -z16 -q --force \
+  --read-parallel --drop-densest-as-needed --coalesce-densest-as-needed \
+  --detect-shared-borders out/tiles/parcels.ndjson
+tippecanoe -o out/tiles/brw.pmtiles -l brw -Z8 -z14 -q --force \
+  --read-parallel --drop-densest-as-needed --coalesce-densest-as-needed \
+  --detect-shared-borders --simplify-only-low-zooms out/tiles/brw.ndjson
+python3 ingest_lod2.py                # streams LoD2 kacheln (hours, resumable)
+cat out/tiles/lod2/*.ndjson > out/tiles/buildings.ndjson
+tippecanoe -o out/tiles/buildings.pmtiles -l buildings -Z13 -z16 -q --force \
+  --read-parallel --drop-densest-as-needed out/tiles/buildings.ndjson
+python3 upload_tiles.py               # same S3 credentials as upload_r2.py
+```
+
 ## Data sources & licenses
 
 | Data | Source | License |
@@ -86,6 +126,7 @@ owner-chain previews carry counts and structure depth only.
 | Parcels (Flurstücke) | [ALKIS "Grundrissdaten vereinfacht" GeoPackage, per Kreis](https://www.opengeodata.nrw.de/produkte/geobasis/lk/akt/gru_vereinfacht_gpkg/) | [dl-de/zero-2.0](https://www.govdata.de/dl-de/zero-2-0) — no restrictions, no attribution required |
 | Bodenrichtwerte | [BORIS-NRW land-wide shapefile](https://www.opengeodata.nrw.de/produkte/infrastruktur_bauen_wohnen/boris/BRW/BRW_EPSG25832_Shape.zip) | [dl-de/zero-2.0](https://www.govdata.de/dl-de/zero-2-0) |
 | Companies (Handelsregister) | [OffeneRegister dump](https://daten.offeneregister.de/de_companies_ocdata.jsonl.bz2) | [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) — company data sourced from [OpenCorporates](https://opencorporates.com/) via OffeneRegister.de |
+| 3D buildings (LoD2) | [CityGML per 1-km kachel](https://www.opengeodata.nrw.de/produkte/geobasis/3dg/lod2_gml/lod2_gml/) | [dl-de/zero-2.0](https://www.govdata.de/dl-de/zero-2-0) |
 
 Source geodata is EPSG:25832; the API serves WGS84. Parcels update quarterly,
 Bodenrichtwerte annually. The company dump is a **snapshot of 2019-02-05**

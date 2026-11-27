@@ -4,6 +4,8 @@ import { TOOLS } from "./tools/registry.js";
 import { dispatchTool, toMcpResult } from "./lib/dispatch.js";
 import type { ToolContext } from "./lib/types.js";
 import { EMAIL_RE, accessPage, accessThanksPage } from "./access-page.js";
+import { mapPage } from "./map-page.js";
+import { handleParcelApi, handleTileRequest } from "./map-api.js";
 
 export interface SessionProps extends Record<string, unknown> {
   ip: string;
@@ -60,6 +62,20 @@ export default {
 
     if (url.pathname === "/access" || url.pathname === "/access/") {
       return handleAccessPage(request, env);
+    }
+
+    if (url.pathname === "/map" || url.pathname === "/map/") {
+      return new Response(mapPage(), {
+        headers: { ...HTML_HEADERS, "cache-control": "public, max-age=300" },
+      });
+    }
+
+    if (url.pathname.startsWith("/map/tiles/")) {
+      return handleTileRequest(request, env, url.pathname.slice("/map/tiles/".length));
+    }
+
+    if (url.pathname === "/map/api/parcel") {
+      return handleParcelApi(request, env);
     }
 
     if (url.pathname === "/" || url.pathname === "") {

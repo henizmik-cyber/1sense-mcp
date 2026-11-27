@@ -29,6 +29,7 @@ from pathlib import Path
 import requests
 
 from common import (
+    NdjsonWriter,
     SqlChunkWriter,
     normalize_kennzeichen,
     pick_column,
@@ -122,7 +123,9 @@ def pick_parcel_layer(gpkg: Path) -> str:
     )
 
 
-def process_gpkg(gpkg: Path, sql: SqlChunkWriter, geo_root: Path) -> int:
+def process_gpkg(gpkg: Path, sql: SqlChunkWriter, geo_root: Path,
+                 ndjson: NdjsonWriter | None = None,
+                 ndjson_seen: set[str] | None = None) -> int:
     import geopandas as gpd
 
     layer = pick_parcel_layer(gpkg)
@@ -193,13 +196,27 @@ def process_gpkg(gpkg: Path, sql: SqlChunkWriter, geo_root: Path) -> int:
             round(float(b["maxx"]), 7), round(float(b["maxy"]), 7),
             geom_key,
         ])
+        geometry = round_coords(row.geometry.__geo_interface__)
         by_flur[(gemarkung, flur)].append(
             {
                 "type": "Feature",
                 "properties": {"id": norm},
-                "geometry": round_coords(row.geometry.__geo_interface__),
+                "geometry": geometry,
             }
         )
+        # Tile input: same geometry plus the attributes the map panel shows.
+        # A parcel can appear in two Kreis files (shared Gemarkung edge) —
+        # emit it once.
+        if ndjson is not None and ndjson_seen is not None and norm not in ndjson_seen:
+            ndjson_seen.add(norm)
+            ndjson.add(
+                {
+                    "id": norm,
+                    "area_m2": area_val,
+                    "municipality": (row[muni_col] if muni_col else None),
+                },
+                geometry,
+            )
         count += 1
 
     for (gemarkung, flur), features in by_flur.items():
@@ -252,14 +269,18 @@ def main() -> None:
 
     sql = SqlChunkWriter(out / "sql", "parcels", "parcels", PARCEL_COLUMNS,
                          rows_per_stmt=250, rows_per_file=20000)
+    ndjson = NdjsonWriter(out / "tiles" / "parcels.ndjson")
+    ndjson_seen: set[str] = set()
     total = 0
     for url in urls:
         zip_path = download(url, Path(args.downloads))
         for gpkg in extract_gpkg(zip_path, Path(args.downloads) / "extracted"):
-            total += process_gpkg(gpkg, sql, out)
+            total += process_gpkg(gpkg, sql, out, ndjson, ndjson_seen)
     files = sql.close()
+    tile_count = ndjson.close()
     print(f"\nDone: {total} parcels -> {files} SQL file(s) in {out / 'sql'}, "
-          f"geometry under {out / 'r2' / 'geo' / 'parcels'}")
+          f"geometry under {out / 'r2' / 'geo' / 'parcels'}, "
+          f"{tile_count} tile features in {out / 'tiles' / 'parcels.ndjson'}")
     print("Next: scripts/ingest/load_d1.sh to load D1, upload_r2.py for geometry.")
 
 
