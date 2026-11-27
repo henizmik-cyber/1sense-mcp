@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "onesense-mcp",
+  "main": "src/index.ts",
+  // Newest date supported by the workerd bundled with @cloudflare/vitest-pool-workers.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OneSenseMcp"] }],
+  "durable_objects": {
+    "bindings": [{ "name": "MCP_OBJECT", "class_name": "OneSenseMcp" }]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "onesense",
+      "database_id": "32938fe6-7085-4202-8fb1-dcc14d79aced",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "GEO", "bucket_name": "onesense-geo" }],
+  // The landing site (a separate Worker) owns 1sensedata.com via a custom
+  // domain; these more specific routes carve /access out of it for this Worker.
+  "routes": [
+    { "pattern": "1sensedata.com/access*", "zone_name": "1sensedata.com" },
+    { "pattern": "www.1sensedata.com/access*", "zone_name": "1sensedata.com" },
+    { "pattern": "1sensedata.com/mcp*", "zone_name": "1sensedata.com" },
+    { "pattern": "www.1sensedata.com/mcp*", "zone_name": "1sensedata.com" }
+  ],
+  // No workers.dev URL: the public endpoint is 1sensedata.com/mcp.
+  "workers_dev": false,
+  "observability": { "enabled": true, "traces": { "enabled": true } }
+}

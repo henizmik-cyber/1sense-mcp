@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+.dev.vars
+worker-configuration.d.ts
+scripts/ingest/.venv/
+scripts/ingest/downloads/
+scripts/ingest/out/
+.DS_Store
+scripts/ingest/.r2.env
+scripts/ingest/*.log
+HANDOFF-MCP.md
