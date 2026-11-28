@@ -12,7 +12,8 @@ Germany.
   Bavaria (which publishes none — requests there return
   `coverage: "not-available"`); Länder are added as their data is loaded (see
   `INGESTED_LANDS` in `src/lib/coverage.ts`). Bodenrichtwerte only where a Land
-  publishes them openly: NRW, Hamburg, Hessen (2024), Berlin, Brandenburg,
+  publishes them openly: NRW, Niedersachsen, Bremen, Hamburg, Hessen (2024),
+  Berlin, Brandenburg, Mecklenburg-Vorpommern,
   Sachsen-Anhalt, Thüringen. Every response states its coverage; for Länder
   without open Bodenrichtwerte it says why.
 - **Access tiers:** anonymous use is limited to 10 tool calls per day per IP;

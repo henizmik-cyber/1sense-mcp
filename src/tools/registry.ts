@@ -65,7 +65,7 @@ export const TOOLS: ToolDef[] = [
     name: "get_bodenrichtwert",
     annotations: { title: "Get Bodenrichtwert (land value)", readOnlyHint: true },
     description:
-      "Official standard land value (Bodenrichtwert) for a parcel id or WGS84 point: EUR/m², Stichtag (Stand), Nutzungsart, with the source per Land. Available only where a Land publishes Bodenrichtwerte as open data (e.g. NRW, Hamburg, Hessen, Berlin, Brandenburg, Sachsen-Anhalt, Thüringen); elsewhere the response says why none is available.",
+      "Official standard land value (Bodenrichtwert) for a parcel id or WGS84 point: EUR/m², Stichtag (Stand), Nutzungsart, with the source per Land. Available only where a Land publishes Bodenrichtwerte as open data (e.g. NRW, Niedersachsen, Bremen, Hamburg, Hessen, Berlin, Brandenburg, Mecklenburg-Vorpommern, Sachsen-Anhalt, Thüringen); elsewhere the response says why none is available.",
     schema: {
       parcel_id: z.string().optional().describe("Flurstückskennzeichen (alternative to lat/lng)"),
       lat: z.number().min(-90).max(90).optional().describe("WGS84 latitude"),

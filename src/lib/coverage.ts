@@ -47,10 +47,13 @@ export function coverageStatusForLand(prefix: string): string {
 /** Länder whose Bodenrichtwerte are loaded, with the Stichtag in use. */
 export const BRW_LANDS: Record<string, string> = {
   "02": "2026-01-01", // Hamburg
+  "03": "2026-01-01", // Niedersachsen
+  "04": "2026-01-01", // Bremen (incl. Bremerhaven, served by LGLN)
   "05": "2026-01-01", // Nordrhein-Westfalen
   "06": "2024-01-01", // Hessen — newest Stichtag published as data (2026 is viewer-only)
   "11": "2026-01-01", // Berlin
   "12": "2026-01-01", // Brandenburg
+  "13": "2026-01-01", // Mecklenburg-Vorpommern (OGC API, CC BY 4.0)
   "15": "2026-01-01", // Sachsen-Anhalt
   "16": "2026-01-01", // Thüringen
 };
@@ -66,17 +69,19 @@ export const BRW_NOT_OPEN: Record<string, string> = {
   "08": "Baden-Württemberg has no Land-wide open Bodenrichtwert dataset (BORIS-BW is a viewer; licensing is per Gutachterausschuss).",
   "09": "Bayern provides Bodenrichtwerte only as paid extracts.",
   "10": "Saarland's Bodenrichtwerte may be viewed but not reused (BORIS Saarland terms).",
-  "13": "Mecklenburg-Vorpommern provides Bodenrichtwert datasets only for a fee.",
   "14": "Sachsen publishes Bodenrichtwerte openly only as a map image; datasets are supplied on paid request.",
 };
 
 /** Source + license line returned with each Land's Bodenrichtwerte. */
 export const BRW_SOURCES: Record<string, string> = {
   "02": "Bodenrichtwerte Hamburg, LGV (dl-de/by-2.0)",
+  "03": "BORIS.NI, © GDI-NI (dl-de/by-2.0)",
+  "04": "BORIS.NI (Bremen), © GDI-NI (dl-de/by-2.0)",
   "05": "BORIS-NRW (dl-de/zero-2.0)",
   "06": "BORIS-Hessen (dl-de/zero-2.0)",
   "11": "Bodenrichtwerte Berlin (dl-de/zero-2.0)",
   "12": "BORIS Brandenburg, © GeoBasis-DE/LGB (dl-de/by-2.0)",
+  "13": "BORIS.MV, Gutachterausschüsse Mecklenburg-Vorpommern (CC BY 4.0)",
   "15": "Bodenrichtwerte Sachsen-Anhalt, LVermGeo (dl-de/by-2.0)",
   "16": "BORIS Thüringen, © GDI-Th (CC BY 4.0)",
 };

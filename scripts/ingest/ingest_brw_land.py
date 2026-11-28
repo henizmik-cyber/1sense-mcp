@@ -217,12 +217,16 @@ def run_st(out: Out) -> None:
                         read_vboris_csv(io.TextIOWrapper(fh, "utf-8-sig"), out, to4326)
 
 
-def run_he(out: Out) -> None:
-    """BORIS-Hessen WFS 2024 as zipped CSV pages (Latin-1, WKT in 'umring')."""
+def read_boris_csv_zips(out: Out, pattern: str, land_filter: str | None = None,
+                        default_muni: str | None = None) -> None:
+    """AdV BRM CSV as served by the BORIS WFS 'application/x-zip-csv' output
+    (Hessen, Niedersachsen/Bremen): '|' separated, Latin-1, WKT in 'umring'
+    (sometimes elsewhere). `land_filter` keeps rows whose Gemeindekennzeichen
+    starts with that Land prefix — the LGLN service mixes NI and HB."""
     from shapely import wkt
 
     to4326 = transformer(25832)
-    for z in sorted(glob.glob("downloads/brw_he/page_*.zip")):
+    for z in sorted(glob.glob(pattern)):
         with zipfile.ZipFile(z) as zf:
             for n in zf.namelist():
                 if not n.lower().endswith(".csv"):
@@ -231,6 +235,9 @@ def run_he(out: Out) -> None:
                     reader = csv.DictReader(io.TextIOWrapper(fh, "latin-1"),
                                             delimiter="|", quoting=csv.QUOTE_NONE)
                     for r in reader:
+                        if land_filter and not str(r.get("gemeindekennzeichen") or "") \
+                                .startswith(land_filter):
+                            continue
                         extra = r.get(None) or []  # fields beyond the header
                         text = find_wkt(list(r.values())[:-1] + list(extra)
                                         if None in r else list(r.values()))
@@ -240,7 +247,85 @@ def run_he(out: Out) -> None:
                         key = f"{r.get('bodenrichtwertNummer')}-{r.get('nutzungArt') or ''}"
                         out.add(key, r.get("bodenrichtwert"), r.get("stichtag"),
                                 r.get("nutzungArt"), r.get("entwicklungszustand"),
-                                r.get("gemeindename"), to4326(wkt.loads(text)))
+                                r.get("gemeindename") or default_muni,
+                                to4326(wkt.loads(text)))
+
+
+def read_boris_gml_records(out: Out, pattern: str, land_filter: str | None = None,
+                           default_muni: str | None = None) -> None:
+    """Single BR_BodenrichtwertZonal records saved as GML because the
+    server's CSV export fails on them (one Niedersachsen record, 2026)."""
+    from lxml import etree
+    from shapely.geometry import Polygon
+
+    to4326 = transformer(25832)
+    for path in sorted(glob.glob(pattern)):
+        root = etree.parse(path).getroot()
+        for el in root.iter():
+            if not str(el.tag).endswith("BR_BodenrichtwertZonal"):
+                continue
+            vals: dict[str, str] = {}
+            rings = []
+            for n in el.iter():
+                ln = str(n.tag).rsplit("}", 1)[-1]
+                if ln in ("bodenrichtwert", "stichtag", "bodenrichtwertNummer",
+                          "entwicklungszustand", "art", "name", "land") and n.text \
+                        and ln not in vals:
+                    vals[ln] = n.text.strip()
+                if ln == "posList" and n.text:
+                    v = [float(x) for x in n.text.split()]
+                    rings.append(list(zip(v[0::2], v[1::2])))
+            if land_filter and vals.get("land") and vals["land"] != land_filter:
+                continue
+            if not rings:
+                out.skipped += 1
+                continue
+            geom = Polygon(rings[0], rings[1:])
+            out.add(f"{vals.get('bodenrichtwertNummer')}-{vals.get('art') or ''}",
+                    vals.get("bodenrichtwert"), vals.get("stichtag"), vals.get("art"),
+                    vals.get("entwicklungszustand"), vals.get("name") or default_muni,
+                    to4326(geom))
+
+
+def run_he(out: Out) -> None:
+    """BORIS-Hessen WFS 2024 as zipped CSV pages."""
+    read_boris_csv_zips(out, "downloads/brw_he/page_*.zip")
+
+
+def run_ni(out: Out) -> None:
+    """BORIS.NI 2026 (LGLN borishb_2026_wfs, which also serves Bremen)."""
+    read_boris_csv_zips(out, "downloads/brw_nihb/*.zip", land_filter="03")
+    read_boris_gml_records(out, "downloads/brw_nihb/rec_*.gml", land_filter="03")
+
+
+def run_hb(out: Out) -> None:
+    """Bremen + Bremerhaven from the same service; Bremen-city rows carry no
+    Gemeinde name (Kennzeichen 04/0/00/000) — the Land is the city."""
+    read_boris_csv_zips(out, "downloads/brw_nihb/*.zip", land_filter="04",
+                        default_muni="Bremen")
+    read_boris_gml_records(out, "downloads/brw_nihb/rec_*.gml", land_filter="04",
+                           default_muni="Bremen")
+
+
+def run_mv(out: Out) -> None:
+    """BORIS.MV OGC API 2026 (12 collections, WGS84). No Gemeinde field:
+    names come from BKG VG250 by centroid (same as INSPIRE parcels)."""
+    from shapely.geometry import shape
+
+    from ingest_land import AdminLookup
+
+    admin = AdminLookup(Path("downloads/vg250/vg250_ebenen_0101/DE_VG250.gpkg"), "13")
+    for path in sorted(glob.glob("downloads/brw_mv/items_*.json")):
+        coll = Path(path).stem.split("_", 1)[1].rsplit("_", 1)[0]
+        for i, f in enumerate(json.load(open(path, encoding="utf-8")).get("features", [])):
+            p = f.get("properties") or {}
+            geom = shape(f["geometry"]) if f.get("geometry") else None
+            muni = None
+            if geom is not None and not geom.is_empty:
+                c = geom.representative_point()
+                muni = admin.municipality(c.x, c.y)
+            out.add(f"{coll}-{f.get('id', i)}", p.get("brwkon"), p.get("stag"),
+                    p.get("anukuerzel"), p.get("ewzkuerzel"), muni or p.get("otn"), geom)
 
 
 def run_be(out: Out) -> None:
@@ -308,8 +393,8 @@ def run_th(out: Out) -> None:
                 g(r, "ENTWICKLUNGSZUSTAND"), g(r, "GEMEINDENAME"), r.geometry)
 
 
-READERS = {"02": run_hh, "06": run_he, "11": run_be, "12": run_bb, "15": run_st,
-           "16": run_th}
+READERS = {"02": run_hh, "03": run_ni, "04": run_hb, "06": run_he, "11": run_be,
+           "12": run_bb, "13": run_mv, "15": run_st, "16": run_th}
 
 
 def main() -> None:
