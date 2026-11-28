@@ -1,13 +1,19 @@
 import { type Envelope, type ToolContext, err, ok } from "../lib/types.js";
 import {
   BAVARIA_NOTE,
+  BRW_LANDS,
+  BRW_NOT_OPEN,
+  BRW_SOURCES,
   COVERED_NOTE,
+  LAND_NAMES,
+  brwNoteForLand,
   coverageForLandPrefix,
   coverageNoteForLandPrefix,
+  coverageStatusForLand,
 } from "../lib/coverage.js";
+import { inBavaria } from "../lib/bavaria.js";
 import {
-  BAVARIA_BBOX,
-  NRW_BBOX,
+  GERMANY_BBOX,
   type GeoJsonGeometry,
   inBbox,
   pointInGeometry,
@@ -23,6 +29,7 @@ interface BrwRow {
   entwicklungszustand: string | null;
   municipality: string | null;
   geometry_key: string | null;
+  land: string | null;
 }
 
 export interface GetBodenrichtwertArgs {
@@ -50,6 +57,11 @@ export async function getBodenrichtwert(
     if (coverage === "not-available" || coverage === "not-covered" || !db) {
       return ok(coverage, null, coverageNoteForLandPrefix(parsed.land));
     }
+    if (!(parsed.land in BRW_LANDS)) {
+      // Parcel is covered, but its Land publishes no open BRW (or not yet
+      // loaded): say so instead of a bare "no data".
+      return ok(coverage, null, brwNoteForLand(parsed.land));
+    }
     const row = await db
       .prepare("SELECT centroid_lat, centroid_lng FROM parcels WHERE id = ?")
       .bind(parsed.normalized)
@@ -63,14 +75,11 @@ export async function getBodenrichtwert(
     point = { lat: row.centroid_lat, lng: row.centroid_lng };
   } else if (args.lat !== undefined && args.lng !== undefined) {
     point = { lat: args.lat, lng: args.lng };
-    if (!inBbox({ lat: point.lat, lng: point.lng }, NRW_BBOX)) {
-      if (inBbox({ lat: point.lat, lng: point.lng }, BAVARIA_BBOX)) {
-        return ok("not-available", null, BAVARIA_NOTE);
-      }
+    if (!inBbox({ lat: point.lat, lng: point.lng }, GERMANY_BBOX)) {
       return ok(
         "not-covered",
         null,
-        `The point (${point.lat}, ${point.lng}) lies outside NRW (coverage check is approximate). ${COVERED_NOTE}`,
+        `The point (${point.lat}, ${point.lng}) lies outside Germany. ${COVERED_NOTE}`,
       );
     }
   } else {
@@ -81,7 +90,7 @@ export async function getBodenrichtwert(
   }
 
   const { results: candidates } = await ctx.env.DB.prepare(
-    `SELECT zone_id, brw_eur_m2, stand, nutzungsart, entwicklungszustand, municipality, geometry_key
+    `SELECT zone_id, brw_eur_m2, stand, nutzungsart, entwicklungszustand, municipality, geometry_key, land
      FROM bodenrichtwerte
      WHERE minx <= ?1 AND maxx >= ?1 AND miny <= ?2 AND maxy >= ?2
      LIMIT 25`,
@@ -107,14 +116,22 @@ export async function getBodenrichtwert(
   }
 
   if (matches.length === 0) {
+    if (inBavaria(point)) {
+      return ok("not-available", null, `${BAVARIA_NOTE} ${BRW_NOT_OPEN["09"]}`);
+    }
+    const loaded = Object.keys(BRW_LANDS)
+      .map((p) => LAND_NAMES[p] ?? p)
+      .sort()
+      .join(", ");
     return err(
       "no_data",
-      `No Bodenrichtwert zone covers (${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}) in the ingested BORIS-NRW data.`,
+      `No Bodenrichtwert zone covers (${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}). Open Bodenrichtwerte are loaded for: ${loaded}. Several Länder publish none openly (viewer or paid only).`,
     );
   }
 
+  const land = matches[0].land ?? "05";
   return ok(
-    "NRW",
+    coverageStatusForLand(land),
     {
       point,
       zones: matches.map((m) => ({
@@ -125,7 +142,7 @@ export async function getBodenrichtwert(
         entwicklungszustand: m.entwicklungszustand,
         municipality: m.municipality,
       })),
-      source: "BORIS-NRW (dl-de/zero-2.0)",
+      source: BRW_SOURCES[land] ?? "Bodenrichtwerte (open data)",
     },
     COVERED_NOTE,
   );

@@ -25,19 +25,22 @@ def normalize_kennzeichen(raw: str) -> str | None:
     text = str(raw).strip()
     # Fixed-width ALKIS form (18/20 chars, '_' as padding): read by position.
     # Stripping '_' first would shift fields when an inner part is padded —
-    # Hamburg has no Flur ("020607___08752______").
-    if "_" in text and len(text) in (18, 20) and re.fullmatch(r"[\d_]+", text):
+    # Hamburg has no Flur ("020607___08752______"). The Nenner may carry a
+    # letter (Sachsen numbers parcels "40a": "145840___00040000a01"); chars
+    # 19-20 are the Flurstücksfolge, which is not needed for uniqueness.
+    if ("_" in text or re.search(r"[A-Za-z]", text)) and len(text) in (18, 20) \
+            and re.fullmatch(r"[\dA-Za-z_]+", text):
         land, gmk, flur = text[0:2], text[2:6], text[6:9]
         zaehler, nenner = text[9:14], text[14:18]
         if not (land.isdigit() and gmk.isdigit()):
             return None
         flur = flur.replace("_", "0")
         zaehler = zaehler.replace("_", "")
-        nenner = nenner.replace("_", "")
-        if not zaehler.isdigit():
+        nenner = nenner.replace("_", "").lower()
+        if not (zaehler.isdigit() and flur.isdigit()) or not nenner.isalnum() and nenner:
             return None
         base = f"{land}{gmk}{flur}{zaehler.zfill(5)}"
-        if nenner and int(nenner) != 0:
+        if nenner and not (nenner.isdigit() and int(nenner) == 0):
             return f"{base}/{nenner.zfill(4)}"
         return base
     cleaned = re.sub(r"[\s_\-.]", "", text)

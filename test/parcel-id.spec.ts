@@ -13,6 +13,10 @@ const CASES: [string, string][] = [
   ["05 2601 007 00123", "05260100700123"], // NRW, spaced
   ["052601007001230000", "05260100700123"], // NRW, fixed width, no padding
   ["05 2601 007 00124/0005", "05260100700124/0005"],
+  ["145840___00040000a01", "14584000000040/000a"], // Sachsen: parcel "40a"
+  ["144271___00521003500", "14427100000521/0035"], // Sachsen: Flurstücksfolge ignored
+  ["14584000000040/000a", "14584000000040/000a"], // canonical form round-trips
+  ["14584000000040/000A", "14584000000040/000a"], // case-insensitive
 ];
 
 describe("parseParcelId", () => {

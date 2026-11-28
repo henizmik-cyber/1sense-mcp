@@ -51,8 +51,7 @@ export function pointInGeometry(pt: LngLat, geom: GeoJsonGeometry): boolean {
 }
 
 /** Rough WGS84 bounding boxes used only for coverage classification of lat/lng input. */
-export const NRW_BBOX = { minLng: 5.85, minLat: 50.3, maxLng: 9.5, maxLat: 52.55 };
-export const BAVARIA_BBOX = { minLng: 8.95, minLat: 47.25, maxLng: 13.9, maxLat: 50.6 };
+export const GERMANY_BBOX = { minLng: 5.8, minLat: 47.2, maxLng: 15.1, maxLat: 55.1 };
 
 export function inBbox(
   pt: LngLat,

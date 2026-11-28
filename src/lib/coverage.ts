@@ -29,12 +29,51 @@ export function coverageStatusForLand(prefix: string): string {
   return prefix === "05" ? "NRW" : (LAND_NAMES[prefix] ?? prefix);
 }
 
+/** Länder whose Bodenrichtwerte are loaded, with the Stichtag in use. */
+export const BRW_LANDS: Record<string, string> = { "05": "2026-01-01" };
+
+/**
+ * Länder that publish no open Bodenrichtwert polygons (verified 2026-11-28):
+ * viewer/raster only, paid extracts, or terms forbidding reuse. Kept explicit
+ * so answers say "not published openly" instead of a bare "no data".
+ */
+export const BRW_NOT_OPEN: Record<string, string> = {
+  "01": "Schleswig-Holstein publishes Bodenrichtwerte for viewing only (DANord viewer); there is no open dataset.",
+  "07": "Rheinland-Pfalz publishes Bodenrichtwerte openly only as a map image; the data itself is a paid service.",
+  "08": "Baden-Württemberg has no Land-wide open Bodenrichtwert dataset (BORIS-BW is a viewer; licensing is per Gutachterausschuss).",
+  "09": "Bayern provides Bodenrichtwerte only as paid extracts.",
+  "10": "Saarland's Bodenrichtwerte may be viewed but not reused (BORIS Saarland terms).",
+  "13": "Mecklenburg-Vorpommern provides Bodenrichtwert datasets only for a fee.",
+  "14": "Sachsen publishes Bodenrichtwerte openly only as a map image; datasets are supplied on paid request.",
+};
+
+/** Source + license line returned with each Land's Bodenrichtwerte. */
+export const BRW_SOURCES: Record<string, string> = {
+  "02": "Bodenrichtwerte Hamburg, LGV (dl-de/by-2.0)",
+  "05": "BORIS-NRW (dl-de/zero-2.0)",
+  "06": "BORIS-Hessen (dl-de/zero-2.0)",
+  "11": "Bodenrichtwerte Berlin (dl-de/zero-2.0)",
+  "12": "BORIS Brandenburg, © GeoBasis-DE/LGB (dl-de/by-2.0)",
+  "15": "Bodenrichtwerte Sachsen-Anhalt, LVermGeo (dl-de/by-2.0)",
+  "16": "BORIS Thüringen, © GDI-Th (CC BY 4.0)",
+};
+
+/** Human note for a Land without loaded Bodenrichtwerte. */
+export function brwNoteForLand(prefix: string): string {
+  const name = LAND_NAMES[prefix] ?? `Bundesland prefix ${prefix}`;
+  return (
+    BRW_NOT_OPEN[prefix] ??
+    `Bodenrichtwerte for ${name} are not loaded yet.`
+  );
+}
+
 export const COVERED_NOTE = `Parcel coverage: ${[...INGESTED_LANDS]
   .map((p) => LAND_NAMES[p] ?? p)
   .sort()
-  .join(
-    ", ",
-  )}. Bodenrichtwerte: NRW only so far. Bavaria publishes no open parcel data (not-available); further Länder are being ingested.`;
+  .join(", ")}. Bodenrichtwerte: ${Object.keys(BRW_LANDS)
+  .map((p) => LAND_NAMES[p] ?? p)
+  .sort()
+  .join(", ")}. Bavaria publishes no open parcel data (not-available); further Länder are being ingested.`;
 
 export const BAVARIA_NOTE =
   "Bavaria publishes no open parcel data — coverage is not-available there (not a temporary gap in this service).";
