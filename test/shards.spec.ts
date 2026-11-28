@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { INGESTED_LANDS } from "../src/lib/coverage.js";
+import { BRW_LANDS, INGESTED_LANDS } from "../src/lib/coverage.js";
 import { dbForLand } from "../src/lib/shards.js";
 import { getParcel, searchParcels } from "../src/tools/parcels.js";
 import { getBodenrichtwert } from "../src/tools/bodenrichtwert.js";
@@ -86,6 +86,30 @@ describe("parcel shard routing", () => {
     if (!res.ok) {
       expect(res.error.code).toBe("no_data");
       expect(res.error.message).toMatch(/loaded for: .*Nordrhein-Westfalen/);
+    }
+  });
+
+  it("returns every value that shares one zone polygon (EFH + MFH)", async () => {
+    BRW_LANDS["02"] = "2026-01-01";
+    const key = "geo/brw/02/02-gtest.json";
+    await env.GEO.put(key, JSON.stringify({
+      type: "Feature", properties: {},
+      geometry: { type: "Polygon", coordinates: [[[10.0, 53.55], [10.01, 53.55], [10.01, 53.56], [10.0, 53.56], [10.0, 53.55]]] },
+    }));
+    await env.DB.batch(["EFH", "MFH"].map((e, i) =>
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO bodenrichtwerte (zone_id, brw_eur_m2, stand, nutzungsart, entwicklungszustand,
+          municipality, minx, miny, maxx, maxy, geometry_key, land)
+         VALUES (?1, ?2, '2026-01-01', 'M', 'B', 'Hamburg', 10.0, 53.55, 10.01, 53.56, ?3, '02')`,
+      ).bind(`02-test-${e}`, 1000 + i * 500, key),
+    ));
+    const res = await getBodenrichtwert(makeCtx(env), { lat: 53.555, lng: 10.005 });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.coverage).toBe("Hamburg");
+      const zones = (res.data as { zones: { zone_id: string }[] }).zones.map((z) => z.zone_id).sort();
+      expect(zones).toEqual(["02-test-EFH", "02-test-MFH"]);
+      expect((res.data as { source: string }).source).toMatch(/Hamburg/);
     }
   });
 

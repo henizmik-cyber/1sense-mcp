@@ -93,26 +93,37 @@ export async function getBodenrichtwert(
     `SELECT zone_id, brw_eur_m2, stand, nutzungsart, entwicklungszustand, municipality, geometry_key, land
      FROM bodenrichtwerte
      WHERE minx <= ?1 AND maxx >= ?1 AND miny <= ?2 AND maxy >= ?2
-     LIMIT 25`,
+     ORDER BY (maxx - minx) * (maxy - miny) ASC
+     LIMIT 80`,
   )
     .bind(point.lng, point.lat)
     .all<BrwRow>();
 
+  // Several values (EFH/MFH/…) can share one zone polygon and geometry file:
+  // test each file once. Smallest bounding boxes come first, so a large
+  // rural zone can't crowd the small urban zone that holds the point out of
+  // the candidate window.
+  const inside = new Map<string, boolean>();
+  const MAX_GEOMETRY_FETCHES = 25;
   const matches: BrwRow[] = [];
   for (const cand of candidates) {
-    if (!cand.geometry_key) continue;
-    const obj = await ctx.env.GEO.get(cand.geometry_key);
-    if (!obj) continue;
-    try {
-      const feature = (await obj.json()) as {
-        geometry?: GeoJsonGeometry;
-      };
-      if (feature.geometry && pointInGeometry(point, feature.geometry)) {
-        matches.push(cand);
+    const key = cand.geometry_key;
+    if (!key) continue;
+    if (!inside.has(key)) {
+      if (inside.size >= MAX_GEOMETRY_FETCHES) break;
+      let hit = false;
+      const obj = await ctx.env.GEO.get(key);
+      if (obj) {
+        try {
+          const feature = (await obj.json()) as { geometry?: GeoJsonGeometry };
+          hit = !!feature.geometry && pointInGeometry(point, feature.geometry);
+        } catch {
+          // Unparseable zone geometry: skip, never guess.
+        }
       }
-    } catch {
-      // Unparseable zone geometry: skip, never guess.
+      inside.set(key, hit);
     }
+    if (inside.get(key)) matches.push(cand);
   }
 
   if (matches.length === 0) {

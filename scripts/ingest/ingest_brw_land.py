@@ -88,10 +88,20 @@ class Out:
                                   BRW_COLUMNS)
         self.tiles = NdjsonWriter(out / "tiles" / f"brw_{land}.ndjson")
         self.seen: dict[str, int] = {}
+        self.geoms_written: set[str] = set()
         self.count = 0
         self.skipped = 0
 
-    def add(self, key: str, brw, stand, nutzung, entw, muni, geom_4326) -> None:
+    def add(self, key: str, brw, stand, nutzung, entw, muni, geom_4326,
+            zone_no: str | None = None) -> None:
+        """One BRW value. Values that share one zone polygon (EFH/MFH/…)
+        get one R2 geometry file and one map shape instead of one stacked
+        copy each. They are grouped by the polygon itself — Hamburg gives
+        every value its own WNUM, so zone numbers can't be trusted for it."""
+        import hashlib
+
+        zone_no = "g" + hashlib.sha1(geom_4326.wkb).hexdigest()[:16] \
+            if geom_4326 is not None else zone_no
         brw = parse_number(brw)
         if brw is None or geom_4326 is None or geom_4326.is_empty:
             self.skipped += 1  # no parseable value or shape: never guess
@@ -100,9 +110,10 @@ class Out:
         n = self.seen.get(base, 0) + 1
         self.seen[base] = n
         zone_id = base if n == 1 else f"{base}-{n}"
-        geometry = round_coords(geom_4326.__geo_interface__, 6)
+        geom_id = (re.sub(r"\W+", "-", f"{self.land}-{zone_no}").strip("-")
+                   if zone_no else zone_id)
         minx, miny, maxx, maxy = geom_4326.bounds
-        geom_key = f"geo/brw/{self.land}/{zone_id}.json"
+        geom_key = f"geo/brw/{self.land}/{geom_id}.json"
         stand = iso_date(stand)
         nutzung = short_code(nutzung)
         entw = short_code(entw)
@@ -112,11 +123,15 @@ class Out:
             round(minx, 7), round(miny, 7), round(maxx, 7), round(maxy, 7),
             geom_key, self.land,
         ])
-        write_geojson(self.out / "r2" / geom_key,
-                      {"type": "Feature", "properties": {"zone_id": zone_id},
-                       "geometry": geometry})
-        self.tiles.add({"zone_id": zone_id, "brw_eur_m2": round(brw, 2),
-                        "nutzungsart": nutzung, "stand": stand}, geometry)
+        if geom_key not in self.geoms_written:
+            self.geoms_written.add(geom_key)
+            geometry = round_coords(geom_4326.__geo_interface__, 6)
+            write_geojson(self.out / "r2" / geom_key,
+                          {"type": "Feature", "properties": {"zone_id": geom_id},
+                           "geometry": geometry})
+            # Map shows the zone's first-listed value; the panel/tool list all.
+            self.tiles.add({"zone_id": geom_id, "brw_eur_m2": round(brw, 2),
+                            "nutzungsart": nutzung, "stand": stand}, geometry)
         self.count += 1
 
     def close(self) -> None:
@@ -177,7 +192,8 @@ def read_vboris_csv(text_stream, out: Out, to4326, prefix_fix=False) -> None:
             geom = strip_zone_prefix(geom)
         g = lambda f: row[idx[f]] if f in idx else None  # noqa: E731
         key = f"{g('WNUM')}-{g('NUTA') or ''}{('-' + g('ERGNUTA')) if g('ERGNUTA') else ''}"
-        out.add(key, g("BRW"), g("STAG"), g("NUTA"), g("ENTW"), g("GENA"), to4326(geom))
+        out.add(key, g("BRW"), g("STAG"), g("NUTA"), g("ENTW"), g("GENA"), to4326(geom),
+                zone_no=g("WNUM"))
 
 
 def run_hh(out: Out) -> None:
@@ -271,7 +287,8 @@ def run_bb(out: Out) -> None:
                     p.get("bodenrichtwert"), p.get("stichtag"),
                     art.get(str(nutz_code)) if nutz_code else None,
                     entw.get(str(p.get("entwicklungszustand"))),
-                    muni, shape(f["geometry"]))
+                    muni, shape(f["geometry"]),
+                    zone_no=p.get("bodenrichtwertNummer"))
 
 
 def run_th(out: Out) -> None:
