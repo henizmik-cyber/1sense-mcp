@@ -9,12 +9,40 @@
   "durable_objects": {
     "bindings": [{ "name": "MCP_OBJECT", "class_name": "OneSenseMcp" }]
   },
+  // Parcel index is sharded by Bundesland group (D1 has a 10 GB per-database
+  // limit; Germany-wide parcels are ~15-20 GB). The main DB keeps NRW parcels
+  // plus everything else (companies, BRW, leads, rate limits, logs).
+  // Routing lives in src/lib/shards.ts.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "onesense",
       "database_id": "32938fe6-7085-4202-8fb1-dcc14d79aced",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "DB_NORTH", // 01 SH, 02 HH, 03 NI, 04 HB, 13 MV
+      "database_name": "onesense-p-north",
+      "database_id": "2f4770e2-5003-406a-9c91-f3bf4193ac33",
+      "migrations_dir": "migrations-shard"
+    },
+    {
+      "binding": "DB_WEST", // 06 HE, 07 RP, 10 SL
+      "database_name": "onesense-p-west",
+      "database_id": "d2d0f77d-4cbe-40d4-9429-c523229f7566",
+      "migrations_dir": "migrations-shard"
+    },
+    {
+      "binding": "DB_BW", // 08 BW
+      "database_name": "onesense-p-bw",
+      "database_id": "8bc25623-843d-42e2-a35e-c3dbd2374dd5",
+      "migrations_dir": "migrations-shard"
+    },
+    {
+      "binding": "DB_EAST", // 11 BE, 12 BB, 14 SN, 15 ST, 16 TH
+      "database_name": "onesense-p-east",
+      "database_id": "2d415143-49ce-43c8-9c84-aa7718f62196",
+      "migrations_dir": "migrations-shard"
     }
   ],
   "r2_buckets": [{ "binding": "GEO", "bucket_name": "onesense-geo" }],

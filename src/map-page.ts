@@ -89,6 +89,7 @@ a { color: inherit; }
   cursor: pointer;
 }
 .seg-btn.active { background: var(--ink); color: var(--paper); }
+.seg-btn:disabled { opacity: 0.35; cursor: default; }
 .chips { display: flex; gap: 6px; }
 .chip {
   font-family: var(--font-small);
@@ -590,6 +591,8 @@ a { color: inherit; }
 
       updateZoomHint();
       map.on("zoomend", updateZoomHint);
+      updateSatAvailability();
+      map.on("moveend", updateSatAvailability);
     });
 
     // ---- UI state ----
@@ -621,6 +624,15 @@ a { color: inherit; }
     }
     btnKarte.addEventListener("click", function () { setView("karte"); });
     btnSat.addEventListener("click", function () { setView("satellit"); });
+
+    // Aerial imagery exists for NRW only (Geobasis NRW DOP) so far: grey the
+    // toggle out elsewhere instead of showing an empty page.
+    function updateSatAvailability() {
+      var c = map.getCenter();
+      var inNrw = c.lng >= 5.69 && c.lng <= 9.69 && c.lat >= 50.26 && c.lat <= 52.58;
+      btnSat.disabled = !inNrw;
+      btnSat.title = inNrw ? "" : "Satellit: aktuell nur in NRW";
+    }
 
     function syncLayers() {
       chipParcels.classList.toggle("active", state.parcels);

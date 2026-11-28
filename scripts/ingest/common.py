@@ -14,14 +14,33 @@ def sql_quote(value) -> str:
     if isinstance(value, (int, float)):
         if value != value:  # NaN
             return "NULL"
-        return repr(value)
+        # float()/int() first: NumPy 2 scalars repr as "np.float64(…)".
+        return repr(int(value) if isinstance(value, int) else float(value))
     text = str(value).replace("'", "''")
     return f"'{text}'"
 
 
 def normalize_kennzeichen(raw: str) -> str | None:
     """Mirrors src/lib/parcel-id.ts: canonical id used as the D1 primary key."""
-    cleaned = re.sub(r"[\s_\-.]", "", str(raw))
+    text = str(raw).strip()
+    # Fixed-width ALKIS form (18/20 chars, '_' as padding): read by position.
+    # Stripping '_' first would shift fields when an inner part is padded —
+    # Hamburg has no Flur ("020607___08752______").
+    if "_" in text and len(text) in (18, 20) and re.fullmatch(r"[\d_]+", text):
+        land, gmk, flur = text[0:2], text[2:6], text[6:9]
+        zaehler, nenner = text[9:14], text[14:18]
+        if not (land.isdigit() and gmk.isdigit()):
+            return None
+        flur = flur.replace("_", "0")
+        zaehler = zaehler.replace("_", "")
+        nenner = nenner.replace("_", "")
+        if not zaehler.isdigit():
+            return None
+        base = f"{land}{gmk}{flur}{zaehler.zfill(5)}"
+        if nenner and int(nenner) != 0:
+            return f"{base}/{nenner.zfill(4)}"
+        return base
+    cleaned = re.sub(r"[\s_\-.]", "", text)
     if not re.fullmatch(r"\d+(/\d+)?", cleaned):
         return None
     if len(cleaned) < 10:

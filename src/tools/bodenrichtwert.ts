@@ -13,6 +13,7 @@ import {
   pointInGeometry,
 } from "../lib/geo.js";
 import { parseParcelId } from "../lib/parcel-id.js";
+import { dbForLand } from "../lib/shards.js";
 
 interface BrwRow {
   zone_id: string;
@@ -45,12 +46,12 @@ export async function getBodenrichtwert(
       );
     }
     const coverage = coverageForLandPrefix(parsed.land);
-    if (coverage !== "NRW") {
+    const db = dbForLand(ctx.env, parsed.land);
+    if (coverage === "not-available" || coverage === "not-covered" || !db) {
       return ok(coverage, null, coverageNoteForLandPrefix(parsed.land));
     }
-    const row = await ctx.env.DB.prepare(
-      "SELECT centroid_lat, centroid_lng FROM parcels WHERE id = ?",
-    )
+    const row = await db
+      .prepare("SELECT centroid_lat, centroid_lng FROM parcels WHERE id = ?")
       .bind(parsed.normalized)
       .first<{ centroid_lat: number | null; centroid_lng: number | null }>();
     if (!row || row.centroid_lat === null || row.centroid_lng === null) {

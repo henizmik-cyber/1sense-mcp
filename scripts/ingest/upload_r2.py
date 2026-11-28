@@ -34,7 +34,10 @@ def iter_files(root: Path, newer_than: float | None = None):
 
 
 def upload_s3(root: Path, workers: int, newer_than: float | None = None) -> None:
+    import time
+
     import boto3
+    from botocore.config import Config
 
     account = os.environ["CLOUDFLARE_ACCOUNT_ID"]
     client = boto3.client(
@@ -43,25 +46,44 @@ def upload_s3(root: Path, workers: int, newer_than: float | None = None) -> None
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
         region_name="auto",
+        config=Config(retries={"max_attempts": 10, "mode": "adaptive"},
+                      connect_timeout=30, read_timeout=120,
+                      max_pool_connections=max(workers, 10)),
     )
 
-    def put(path: Path, key: str) -> str:
-        client.upload_file(
-            str(path), BUCKET, key, ExtraArgs={"ContentType": "application/json"}
-        )
-        return key
+    def put(path: Path, key: str) -> str | None:
+        # One dropped connection must not abort a run of 100k+ objects:
+        # retry with backoff, then report the key instead of raising.
+        for attempt in range(1, 6):
+            try:
+                client.upload_file(
+                    str(path), BUCKET, key, ExtraArgs={"ContentType": "application/json"}
+                )
+                return None
+            except Exception as e:  # noqa: BLE001
+                if attempt == 5:
+                    return f"{key}: {e}"
+                time.sleep(5 * attempt)
+        return None
 
     files = list(iter_files(root, newer_than))
-    print(f"uploading {len(files)} objects to r2://{BUCKET} via S3 API…")
+    print(f"uploading {len(files)} objects to r2://{BUCKET} via S3 API…", flush=True)
     done = 0
+    failed: list[str] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(put, p, k) for p, k in files]
         for fut in as_completed(futures):
-            fut.result()
+            err = fut.result()
+            if err:
+                failed.append(err)
             done += 1
-            if done % 500 == 0:
-                print(f"  {done}/{len(files)}")
-    print(f"done: {done} objects")
+            if done % 5000 == 0:
+                print(f"  {done}/{len(files)} ({len(failed)} failed)", flush=True)
+    print(f"done: {done - len(failed)} uploaded, {len(failed)} failed", flush=True)
+    if failed:
+        Path("r2_upload_failures.txt").write_text("\n".join(failed), encoding="utf-8")
+        print("failed keys listed in r2_upload_failures.txt — re-run to retry", flush=True)
+        raise SystemExit(1)
 
 
 def upload_wrangler(root: Path, local: bool) -> None:

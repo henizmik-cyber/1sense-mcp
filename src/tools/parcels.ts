@@ -10,9 +10,11 @@ import {
   coverageForCity,
   coverageForLandPrefix,
   coverageNoteForLandPrefix,
+  coverageStatusForLand,
 } from "../lib/coverage.js";
 import { mapLink } from "../lib/geo.js";
 import { parseParcelId } from "../lib/parcel-id.js";
+import { allParcelDbs, dbForLand } from "../lib/shards.js";
 
 interface ParcelRow {
   id: string;
@@ -122,12 +124,28 @@ export async function searchParcels(
   const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
   binds.push(limit);
 
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT * FROM parcels WHERE ${conditions.join(" AND ")}
-     ORDER BY area_m2 DESC LIMIT ?`,
-  )
-    .bind(...binds)
-    .all<ParcelRow>();
+  // Parcels are sharded by Länder group: fan the search out and merge.
+  const sql = `SELECT * FROM parcels WHERE ${conditions.join(" AND ")}
+     ORDER BY area_m2 DESC LIMIT ?`;
+  const perShard = await Promise.all(
+    allParcelDbs(ctx.env).map((db) =>
+      db
+        .prepare(sql)
+        .bind(...binds)
+        .all<ParcelRow>()
+        .then((r) => r.results)
+        .catch(() => [] as ParcelRow[]),
+    ),
+  );
+  const results = perShard
+    .flat()
+    .sort((a, b) => (b.area_m2 ?? 0) - (a.area_m2 ?? 0))
+    .slice(0, limit);
+
+  // One Land in the result set → its status; several (or none) → "DE".
+  const lands = [...new Set(results.map((r) => r.land))];
+  const searchCoverage =
+    lands.length === 1 ? coverageStatusForLand(lands[0]) : "DE";
 
   const notes: string[] = [COVERED_NOTE];
   if (args.zoning) {
@@ -142,7 +160,7 @@ export async function searchParcels(
   }
 
   return ok(
-    "NRW",
+    searchCoverage,
     { count: results.length, parcels: results.map(toSummary) },
     notes.join(" "),
   );
@@ -165,11 +183,13 @@ export async function getParcel(
   }
 
   const coverage = coverageForLandPrefix(parsed.land);
-  if (coverage !== "NRW") {
+  const db = dbForLand(ctx.env, parsed.land);
+  if (coverage === "not-available" || coverage === "not-covered" || !db) {
     return ok(coverage, null, coverageNoteForLandPrefix(parsed.land));
   }
 
-  const row = await ctx.env.DB.prepare("SELECT * FROM parcels WHERE id = ?")
+  const row = await db
+    .prepare("SELECT * FROM parcels WHERE id = ?")
     .bind(parsed.normalized)
     .first<ParcelRow>();
   if (!row) {
@@ -183,7 +203,7 @@ export async function getParcel(
   let neighbors: ParcelSummary[] = [];
   if (row.minx !== null) {
     const pad = 0.00015; // ~10-15 m
-    const { results } = await ctx.env.DB.prepare(
+    const { results } = await db.prepare(
       `SELECT * FROM parcels
        WHERE id != ? AND minx <= ? AND maxx >= ? AND miny <= ? AND maxy >= ?
        LIMIT 12`,
@@ -221,7 +241,7 @@ export async function getParcel(
   }
 
   return ok(
-    "NRW",
+    coverage,
     {
       ...toSummary(row),
       gemarkung_nr: row.gemarkung_nr,
@@ -257,11 +277,12 @@ export async function estimateBuildable(
     );
   }
   const coverage = coverageForLandPrefix(parsed.land);
-  if (coverage !== "NRW") {
+  const db = dbForLand(ctx.env, parsed.land);
+  if (coverage === "not-available" || coverage === "not-covered" || !db) {
     return ok(coverage, null, coverageNoteForLandPrefix(parsed.land));
   }
 
-  const row = await ctx.env.DB.prepare(
+  const row = await db.prepare(
     "SELECT id, area_m2, municipality FROM parcels WHERE id = ?",
   )
     .bind(parsed.normalized)
@@ -275,7 +296,7 @@ export async function estimateBuildable(
 
   const footprint = row.area_m2 * DEFAULT_GRZ;
   return ok(
-    "NRW",
+    coverage,
     {
       parcel_id: row.id,
       municipality: row.municipality,

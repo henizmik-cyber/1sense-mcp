@@ -8,6 +8,7 @@
  */
 
 import { parseParcelId } from "./lib/parcel-id.js";
+import { dbForLand } from "./lib/shards.js";
 import { getBodenrichtwert } from "./tools/bodenrichtwert.js";
 import { sha256Hex } from "./lib/hash.js";
 import { MAP_API_DAILY_LIMIT, checkAndCountRateLimit } from "./lib/ratelimit.js";
@@ -143,7 +144,17 @@ export async function handleParcelApi(
     );
   }
 
-  const row = await env.DB.prepare(
+  const db = dbForLand(env, parsed.land);
+  if (!db) {
+    return Response.json(
+      {
+        ok: false,
+        error: { code: "no_data", message: "No parcel data for this Land." },
+      },
+      { status: 404 },
+    );
+  }
+  const row = await db.prepare(
     `SELECT id, area_m2, municipality, kreis, gemarkung_name, gemarkung_nr,
             flur, zaehler, nenner, centroid_lat, centroid_lng
      FROM parcels WHERE id = ?`,

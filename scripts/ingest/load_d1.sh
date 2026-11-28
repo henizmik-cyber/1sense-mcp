@@ -3,12 +3,14 @@
 #   scripts/ingest/load_d1.sh local            # wrangler dev's local database
 #   scripts/ingest/load_d1.sh remote           # the deployed database
 #   scripts/ingest/load_d1.sh remote out/sql parcels_0115.sql   # resume at a file
+#   DB_NAME=onesense-p-west scripts/ingest/load_d1.sh remote out/sql-07   # a shard
 # Files use INSERT OR REPLACE, so re-running any file is safe.
 set -euo pipefail
 
 MODE="${1:-local}"
 SQL_DIR="${2:-out/sql}"
 RESUME_AT="${3:-}"
+DB_NAME="${DB_NAME:-onesense}"
 
 case "$MODE" in
   local)  FLAG="--local" ;;
@@ -32,7 +34,7 @@ for f in "${files[@]}"; do
     if [ "$(basename "$f")" = "$RESUME_AT" ]; then skipping=""; else continue; fi
   fi
   attempt=1
-  until npx wrangler d1 execute onesense "$FLAG" --file "$f" >/dev/null 2>&1; do
+  until npx wrangler d1 execute "$DB_NAME" "$FLAG" --file "$f" >/dev/null 2>&1; do
     if [ $attempt -ge 5 ]; then
       echo "FAILED after 5 attempts: $f — resume with: $0 $MODE $SQL_DIR $(basename "$f")" >&2
       exit 1

@@ -14,6 +14,24 @@ export interface ParcelIdParts {
  * "052601-007-00123/0000". Underscores (NAS filler) are stripped.
  */
 export function parseParcelId(raw: string): ParcelIdParts | null {
+  // Fixed-width form with '_' padding (18/20 chars): read by position.
+  // Stripping '_' first would shift fields when an inner part is padded —
+  // Hamburg has no Flur ("020607___08752______").
+  const trimmed = raw.trim();
+  if (trimmed.includes("_") && (trimmed.length === 18 || trimmed.length === 20) && /^[\d_]+$/.test(trimmed)) {
+    const land = trimmed.slice(0, 2);
+    const gemarkung = trimmed.slice(2, 6);
+    const flur = trimmed.slice(6, 9).replace(/_/g, "0");
+    const zaehler = trimmed.slice(9, 14).replace(/_/g, "");
+    const n = trimmed.slice(14, 18).replace(/_/g, "");
+    if (!/^\d{2}$/.test(land) || !/^\d{4}$/.test(gemarkung) || !/^\d+$/.test(zaehler)) {
+      return null;
+    }
+    const nenner = n && Number(n) !== 0 ? n : null;
+    const normalized = normalizeParts(land, gemarkung, flur, zaehler, nenner);
+    return { land, gemarkung, flur, zaehler, nenner, normalized };
+  }
+
   const cleaned = raw.replace(/[\s_\-.]/g, "");
   if (!/^\d+(\/\d+)?$/.test(cleaned)) return null;
   if (cleaned.length < 10) return null;

@@ -10,13 +10,15 @@ export interface ToolContext {
 export const UNLOCK_URL = "https://1sensedata.com/access";
 
 /**
- * Coverage semantics (v1):
- * - "NRW": the request falls inside the covered Bundesland (data may still be
- *   partial — coverage_note says what is ingested).
+ * Coverage semantics:
+ * - A covered request returns the Bundesland as the status — "NRW" for
+ *   Nordrhein-Westfalen (kept for compatibility), the full Land name for
+ *   every Land ingested later (data may still be partial — coverage_note
+ *   says what is ingested).
  * - "not-available": Bavaria. No open parcel data exists for Bavaria.
- * - "not-covered": another Bundesland, planned but not ingested in v1.
+ * - "not-covered": a Bundesland not ingested yet.
  */
-export type CoverageStatus = "NRW" | "not-available" | "not-covered";
+export type CoverageStatus = "not-available" | "not-covered" | (string & {});
 
 export interface ToolSuccess<T> {
   ok: true;
