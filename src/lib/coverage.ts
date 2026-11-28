@@ -23,10 +23,12 @@ export const LAND_NAMES: Record<string, string> = {
 /** Länder whose parcels are ingested (prefix). Extend as Länder are loaded;
  * shard routing in shards.ts works for every non-Bavarian prefix already. */
 export const INGESTED_LANDS = new Set<string>([
+  "01", // Schleswig-Holstein
   "02", // Hamburg
   "03", // Niedersachsen
   "04", // Bremen
   "05", // Nordrhein-Westfalen
+  "06", // Hessen
   "07", // Rheinland-Pfalz
   "10", // Saarland
   "11", // Berlin
