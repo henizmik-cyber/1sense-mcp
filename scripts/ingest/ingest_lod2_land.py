@@ -156,6 +156,78 @@ def parse_citygml(fh, out, default_epsg: int) -> int:
     return count
 
 
+def extract_inspire_bu(elem) -> list[dict]:
+    """INSPIRE bu-core3d Building (Saarland): no semantic GroundSurface and
+    no measuredHeight. Coordinates are lat lon h (EPSG:7423 = ETRS89 +
+    EVRS; ETRS89 is within ~1 m of WGS84, so no reprojection for display).
+    Footprint = the horizontal surface(s) at the building's lowest level;
+    fallback = the union of all surfaces projected onto the ground.
+    Height = bu-base:heightAboveGround, fallback max(z) - min(z)."""
+    from shapely.geometry import Polygon, mapping
+    from shapely.ops import unary_union
+
+    heights: list[float] = []  # typically eave + highest point: use the max
+    surfaces: list[tuple[list[tuple[float, float]], list[float]]] = []
+    for node in elem.iter():
+        name = localname(node.tag)
+        if name == "value" and node.text and \
+                localname(node.getparent().tag) == "HeightAboveGround":
+            try:
+                heights.append(float(node.text))
+            except ValueError:
+                pass
+        elif name == "posList" and node.text:
+            vals = node.text.split()
+            if len(vals) < 12 or len(vals) % 3:
+                continue
+            try:
+                f = [float(v) for v in vals]
+            except ValueError:
+                continue
+            ring = [(f[i + 1], f[i]) for i in range(0, len(f), 3)]  # lat lon -> lng lat
+            surfaces.append((ring, f[2::3]))
+    if not surfaces:
+        return []
+    zmin = min(min(z) for _, z in surfaces)
+    zmax = max(max(z) for _, z in surfaces)
+    ground = [Polygon(r) for r, z in surfaces
+              if max(z) - min(z) < 0.05 and abs(min(z) - zmin) < 0.1 and len(r) >= 4]
+    ground = [p for p in ground if p.is_valid and p.area > 0]
+    if ground:
+        footprint = unary_union(ground)
+    else:
+        projected = [Polygon(r).buffer(0) for r, _ in surfaces if len(r) >= 4]
+        footprint = unary_union([p for p in projected if p.area > 0])
+    if footprint.is_empty:
+        return []
+    height = max(heights) if heights else zmax - zmin
+    if height is None or height <= 0 or height > 400:
+        return []
+    geometry = json.loads(json.dumps(mapping(footprint)))
+    from common import round_coords
+
+    return [{"type": "Feature", "properties": {"h": round(height, 1)},
+             "geometry": round_coords(geometry, 7)}]
+
+
+def parse_inspire_bu(fh, out) -> int:
+    from lxml import etree
+
+    count = 0
+    for _, elem in etree.iterparse(fh, events=("end",), huge_tree=True):
+        if localname(elem.tag) == "Building" and "bu-core3d" in str(elem.tag) or \
+                (localname(elem.tag) == "Building" and "inspire.ec.europa.eu" in str(elem.tag)):
+            for feat in extract_inspire_bu(elem):
+                json.dump(feat, out, separators=(",", ":"))
+                out.write("\n")
+                count += 1
+            elem.clear()
+            parent = elem.getparent()
+            if parent is not None:
+                parent.remove(elem)
+    return count
+
+
 def parse_zip(path_or_file, out, default_epsg: int) -> int:
     count = 0
     with zipfile.ZipFile(path_or_file) as zf:
@@ -184,18 +256,20 @@ def process_job(job: dict, out_dir: str, default_epsg: int) -> tuple[str, int, s
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp = tmp_dir / name
     try:
-        for attempt in range(1, 5):
+        import time
+
+        for attempt in range(1, 7):
             try:
                 with requests.get(job["url"], timeout=(30, 300), headers=UA, stream=True) as r:
                     r.raise_for_status()
-                    ctype = r.headers.get("content-type", "")
                     with open(tmp, "wb") as fh:
                         for chunk in r.iter_content(1 << 20):
                             fh.write(chunk)
                 break
             except Exception:  # noqa: BLE001
-                if attempt == 4:
+                if attempt == 6:
                     raise
+                time.sleep(min(15 * attempt, 90))  # back off: busy servers recover
         # "Soft 200" outage pages (seen at Thüringen) are tiny HTML documents.
         if tmp.stat().st_size < 4096 and b"<html" in tmp.read_bytes()[:2048].lower():
             return name, 0, "server returned an HTML page instead of data"
@@ -205,7 +279,12 @@ def process_job(job: dict, out_dir: str, default_epsg: int) -> tuple[str, int, s
                 n = parse_zip(tmp, out, default_epsg)
             else:
                 with open(tmp, "rb") as fh:
-                    n = parse_citygml(fh, out, default_epsg)
+                    head = fh.read(8192)
+                    fh.seek(0)
+                    if b"bu-core3d" in head:  # INSPIRE buildings (Saarland)
+                        n = parse_inspire_bu(fh, out)
+                    else:
+                        n = parse_citygml(fh, out, default_epsg)
         part.rename(out_path)
         return name, n, None
     except Exception as e:  # noqa: BLE001
@@ -295,6 +374,38 @@ def list_sh() -> list[dict]:
     return jobs
 
 
+def list_sl() -> list[dict]:
+    """Saarland: AdV LoD2 is shop-only; the INSPIRE BU-3D WFS is open
+    (dl-de/by-2.0). Pages of 15,000 (server cap); deegree reports
+    numberReturned=0 while streaming, so the total comes from a hits query."""
+    base = ("https://geoportal.saarland.de/gdi-sl/inspirewfs_Gebaeude_3D_LoD2"
+            "?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=bu-core3d:Building"
+            "&NAMESPACES=xmlns(bu-core3d,http://inspire.ec.europa.eu/schemas/bu-core3d/4.0)")
+    import time
+
+    m = None
+    for attempt in range(1, 9):
+        try:
+            hits = requests.get(base + "&RESULTTYPE=hits", timeout=300, headers=UA).text
+            m = re.search(r'numberMatched="(\d+)"', hits)
+        except Exception:  # noqa: BLE001
+            m = None
+        if m:
+            break
+        time.sleep(min(15 * attempt, 90))
+    if not m:
+        # Count measured 2026-11-28; pages past the true end come back
+        # empty, so a stale count cannot corrupt the output.
+        print("NOTE: hits query kept failing; using last measured count 738006")
+        m = re.match(r"(\d+)", "738006")
+    # 500 per page: the server's DB pool times out intermittently under load
+    # (HTTP 500 "Timeout waiting for idle object"); small pages + retries + one
+    # worker keep the crawl gentle and reliable.
+    total, page = int(m.group(1)), 500
+    return [{"url": f"{base}&COUNT={page}&STARTINDEX={s}", "name": f"sl_bu_{s:07d}.gml"}
+            for s in range(0, total, page)]
+
+
 def list_fixed(urls: list[str]) -> list[dict]:
     return [{"url": u, "name": u.rsplit("/", 1)[-1]} for u in urls]
 
@@ -339,6 +450,7 @@ LANDS = {
     "06": ("Hessen", list_he, 25832),
     "07": ("Rheinland-Pfalz", list_rp, 25832),
     "09": ("Bayern", list_by, 25832),
+    "10": ("Saarland (INSPIRE BU-3D)", list_sl, 4326),
     "11": ("Berlin", list_be, 25833),
     "12": ("Brandenburg", list_bb, 25833),
     "13": ("Mecklenburg-Vorpommern", list_mv, 25833),

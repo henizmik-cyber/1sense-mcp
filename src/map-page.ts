@@ -3,11 +3,13 @@
  * (Petrona/Instrument Sans, ink-on-paper palette): full-bleed map, floating
  * white cards, right-hand parcel panel with a locked owner card that funnels
  * to /access. The basemap is OpenFreeMap Liberty, recolored client-side to
- * the sand palette; satellite is the Geobasis NRW DOP WMTS (dl-de/zero-2.0).
+ * the sand palette; satellite combines each Land's open aerial imagery.
  *
  * The page never renders personal names — parcel facts and Bodenrichtwerte
  * only; the owner question is always the locked card.
  */
+
+import { BAVARIA_RING } from "./lib/bavaria.js";
 
 export function mapPage(): string {
   return `<!doctype html>
@@ -447,8 +449,97 @@ a { color: inherit; }
       positionOptions: { enableHighAccuracy: true }
     }), "top-right");
 
+    // ---- Aerial imagery beyond NRW: one open source per Land (verified
+    // 2026-11-28, docs/germany-sources.md). No national open DOP exists (the
+    // BKG mosaic is V-GeoBund only), so Länder sources are layered, each
+    // limited to its Land's box; WMS tiles are transparent PNG outside the
+    // Land so neighbours show through at borders. Sentinel-2 (10 m) is the
+    // low-zoom base so Satellit also works zoomed out.
+    var WMS = "SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&STYLES=&CRS=EPSG:3857" +
+      "&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=TRUE";
+    function wms(base, layers) { return [base + WMS + "&LAYERS=" + layers]; }
+    var BY_TILES = [];
+    for (var h = 1; h <= 9; h++) {
+      BY_TILES.push("https://wmtsod" + h + ".bayernwolke.de/wmts/by_dop/smerc/{z}/{x}/{y}");
+    }
+    // Bottom to top. bounds: VG250 Land extents (+0.01°).
+    var SAT_SOURCES = [
+      { id: "sat-de", tiles: [
+          "https://sgx.geodatenzentrum.de/wms_sen2europe?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&STYLES=" +
+          "&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg&LAYERS=rgb"],
+        bounds: [5.8, 47.2, 15.1, 55.1], maxzoom: 13,
+        attribution: "Satellit: Europäische Union, enthält veränderte Copernicus-Sentinel-Daten (BKG)" },
+      { id: "sat-09", tiles: BY_TILES, bounds: [8.966, 47.26, 13.85, 50.574], maxzoom: 19,
+        attribution: "Luftbilder Bayern: © Bayerische Vermessungsverwaltung, EU/Copernicus Sentinel-2, BKG (CC BY 4.0)" },
+      { id: "sat-08", tiles: [
+          "https://owsproxy.lgl-bw.de/owsproxy/ows/WMTS_LGL-BW_ATKIS_DOP_20_C?SERVICE=WMTS&REQUEST=GetTile" +
+          "&VERSION=1.0.0&LAYER=DOP_20_C&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible" +
+          "&TILEMATRIX=GoogleMapsCompatible:{z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg"],
+        bounds: [7.502, 47.522, 10.506, 49.801], maxzoom: 20,
+        attribution: "Luftbilder: LGL-BW (2026) dl-de/by-2.0, www.lgl-bw.de" },
+      { id: "sat-10", tiles: wms("https://geoportal.saarland.de/freewms/dop2023?", "sl_dop20_rgb"),
+        bounds: [6.347, 49.102, 7.414, 49.649], attribution: "Luftbilder: © GeoBasis DE/LVGL-SL (2026)" },
+      { id: "sat-07", tiles: wms("https://geo4.service24.rlp.de/wms/rp_dop20.fcgi?", "rp_dop20"),
+        bounds: [6.102, 48.957, 8.518, 50.952], attribution: "Luftbilder: ©GeoBasis-DE / LVermGeoRP (2026), dl-de/by-2-0" },
+      { id: "sat-06", tiles: wms("https://www.gds-srv.hessen.de/cgi-bin/lika-services/ogc-free-images.ows?", "he_dop_rgb"),
+        bounds: [7.762, 49.385, 10.246, 51.667], attribution: "Luftbilder: HVBG Hessen (Daten verändert)" },
+      { id: "sat-16", tiles: wms("https://www.geoproxy.geoportal-th.de/geoproxy/services/DOP?", "th_dop"),
+        bounds: [9.867, 50.195, 12.664, 51.659], attribution: "Luftbilder: © GDI-Th (CC BY 4.0)" },
+      { id: "sat-14", tiles: wms("https://geodienste.sachsen.de/wms_geosn_dop-rgb/guest?", "sn_dop_020"),
+        bounds: [11.861, 50.162, 15.052, 51.695], attribution: "Luftbilder: Quelle: GeoSN, dl-de/by-2-0" },
+      { id: "sat-15", tiles: wms("https://www.geodatenportal.sachsen-anhalt.de/wss/service/ST_LVermGeo_DOP_WMS_OpenData/guest?", "lsa_lvermgeo_dop20_2"),
+        bounds: [10.551, 50.928, 13.197, 53.052], attribution: "Luftbilder: © GeoBasis-DE/LVermGeo ST" },
+      { id: "sat-03", tiles: wms("https://opendata.lgln.niedersachsen.de/doorman/noauth/dop_wms?", "ni_dop20"),
+        bounds: [6.336, 51.285, 11.608, 54.148], attribution: "Luftbilder: LGLN (2026) CC BY 4.0" },
+      { id: "sat-04", tiles: wms("https://geodienste.bremen.de/wms_dop_lb?", "dop10_2025_HB,dop10_2025_BHV"),
+        bounds: [8.472, 53.001, 9.001, 53.62], attribution: "Luftbilder: Landesamt GeoInformation Bremen" },
+      { id: "sat-01", tiles: wms("https://dienste.gdi-sh.de/WMS_SH_DOP20col_OpenGBD?", "sh_dop20_rgb"),
+        bounds: [7.511, 53.35, 11.682, 55.109], attribution: "Luftbilder: © GeoBasis-DE/LVermGeo SH/CC BY 4.0" },
+      { id: "sat-02", tiles: [wms("https://geodienste.hamburg.de/wms_dop_zeitreihe_unbelaubt?", "dop_zeitreihe_unbelaubt")[0] + "&TIME=2026"],
+        bounds: [8.094, 53.385, 10.336, 54.038], attribution: "Luftbilder: Freie und Hansestadt Hamburg, LGV" },
+      { id: "sat-13", tiles: wms("https://www.geodaten-mv.de/dienste/adv_dop?", "mv_dop"),
+        bounds: [10.584, 53.1, 14.422, 54.894], attribution: "Luftbilder: © GeoBasis-DE/M-V 2026 (CC BY 4.0)" },
+      { id: "sat-12", tiles: wms("https://isk.geobasis-bb.de/mapproxy/dop20c/service/wms?", "bebb_dop20c"),
+        bounds: [11.256, 51.349, 14.776, 53.569], attribution: "Luftbilder: © GeoBasis-DE/LGB, dl-de/by-2-0" },
+      { id: "sat-11", tiles: wms("https://gdi.berlin.de/services/wms/truedop_2026?", "truedop_2026"),
+        bounds: [13.078, 52.328, 13.77, 52.685], attribution: "Luftbilder: Geoportal Berlin (dl-de/zero-2.0)" }
+    ];
+    var SAT_LAYER_IDS = [];
+
+    // Bavaria publishes no open parcel data; its open (CC BY 4.0) ALKIS
+    // Parzellarkarte WMS still shows boundaries as an image — no parcel
+    // numbers, nothing to click. The hint below says so in Bavaria.
+    var BAVARIA_RING = ${JSON.stringify(BAVARIA_RING)};
+    function inBavaria(lng, lat) {
+      var inside = false;
+      for (var i = 0, j = BAVARIA_RING.length - 1; i < BAVARIA_RING.length; j = i++) {
+        var xi = BAVARIA_RING[i][0], yi = BAVARIA_RING[i][1];
+        var xj = BAVARIA_RING[j][0], yj = BAVARIA_RING[j][1];
+        if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }
+
     map.on("load", function () {
       var origin = location.origin;
+
+      SAT_SOURCES.forEach(function (s) {
+        map.addSource(s.id, {
+          type: "raster", tiles: s.tiles, tileSize: 256, bounds: s.bounds,
+          minzoom: 5, maxzoom: s.maxzoom || 19, attribution: s.attribution
+        });
+        map.addLayer({ id: s.id + "-layer", type: "raster", source: s.id,
+                       layout: { visibility: "none" } });
+        SAT_LAYER_IDS.push(s.id + "-layer");
+      });
+
+      map.addSource("by-parcels", {
+        type: "raster",
+        tiles: ["https://geoservices.bayern.de/od/wms/alkis/v1/parzellarkarte?" + WMS +
+                "&LAYERS=by_alkis_parzellarkarte_umr_schwarz"],
+        tileSize: 256, bounds: [8.966, 47.26, 13.85, 50.574], minzoom: 15, maxzoom: 19,
+        attribution: "Flurkarte Bayern (Bild): © Bayerische Vermessungsverwaltung, CC BY 4.0"
+      });
 
       map.addSource("dop", {
         type: "raster",
@@ -523,6 +614,14 @@ a { color: inherit; }
       });
 
       map.addLayer({
+        id: "by-parcels-layer",
+        type: "raster",
+        source: "by-parcels",
+        layout: { visibility: "none" },
+        paint: { "raster-opacity": 0.55 }
+      });
+
+      map.addLayer({
         id: "parcel-fill",
         type: "fill",
         source: "parcels",
@@ -590,9 +689,9 @@ a { color: inherit; }
       });
 
       updateZoomHint();
-      map.on("zoomend", updateZoomHint);
-      updateSatAvailability();
-      map.on("moveend", updateSatAvailability);
+      map.on("moveend", updateZoomHint);
+      map.on("moveend", syncRegionalLayers);
+      syncRegionalLayers();
     });
 
     // ---- UI state ----
@@ -612,8 +711,7 @@ a { color: inherit; }
       btnKarte.classList.toggle("active", view === "karte");
       btnSat.classList.toggle("active", view === "satellit");
       if (!map.getLayer("dop-layer")) return;
-      map.setLayoutProperty("dop-layer", "visibility",
-        view === "satellit" ? "visible" : "none");
+      syncRegionalLayers();
       // Ink lines disappear on imagery — switch parcel strokes to paper.
       var lineColor = view === "satellit" ? "#ffffff" : INK;
       var lineOpacity = view === "satellit"
@@ -622,23 +720,38 @@ a { color: inherit; }
       map.setPaintProperty("parcel-line", "line-color", lineColor);
       map.setPaintProperty("parcel-line", "line-opacity", lineOpacity);
     }
+    // Regional raster layers (each Land's imagery, Bavaria's outline image)
+    // are shown only where their Land overlaps the view. MapLibre lists the
+    // attribution of every visible source regardless of its bounds, so this
+    // keeps the credits to the Länder actually on screen — and skips tile
+    // requests to servers whose area is out of view.
+    var REGIONAL = SAT_SOURCES.map(function (s) {
+      return { layer: s.id + "-layer", bounds: s.bounds, sat: true };
+    }).concat([
+      { layer: "dop-layer", bounds: [5.69, 50.26, 9.69, 52.58], sat: true },
+      { layer: "by-parcels-layer", bounds: [8.966, 47.26, 13.85, 50.574], sat: false }
+    ]);
+    function syncRegionalLayers() {
+      var b = map.getBounds();
+      var v = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      REGIONAL.forEach(function (r) {
+        if (!map.getLayer(r.layer)) return;
+        var hit = r.bounds[0] <= v[2] && r.bounds[2] >= v[0] &&
+                  r.bounds[1] <= v[3] && r.bounds[3] >= v[1];
+        var on = hit && (r.sat ? state.view === "satellit" : state.parcels);
+        map.setLayoutProperty(r.layer, "visibility", on ? "visible" : "none");
+      });
+    }
+
     btnKarte.addEventListener("click", function () { setView("karte"); });
     btnSat.addEventListener("click", function () { setView("satellit"); });
-
-    // Aerial imagery exists for NRW only (Geobasis NRW DOP) so far: grey the
-    // toggle out elsewhere instead of showing an empty page.
-    function updateSatAvailability() {
-      var c = map.getCenter();
-      var inNrw = c.lng >= 5.69 && c.lng <= 9.69 && c.lat >= 50.26 && c.lat <= 52.58;
-      btnSat.disabled = !inNrw;
-      btnSat.title = inNrw ? "" : "Satellit: aktuell nur in NRW";
-    }
 
     function syncLayers() {
       chipParcels.classList.toggle("active", state.parcels);
       chipBrw.classList.toggle("active", state.brw);
       legend.style.display = state.brw ? "" : "none";
       var vis = function (on) { return on ? "visible" : "none"; };
+      syncRegionalLayers();
       ["parcel-fill", "parcel-line", "parcel-selected"].forEach(function (id) {
         if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis(state.parcels));
       });
@@ -667,9 +780,17 @@ a { color: inherit; }
       }
     });
 
+    var ZOOM_HINT = zoomHint.textContent;
     function updateZoomHint() {
-      var show = state.parcels && map.getZoom() < PARCEL_MINZOOM;
-      zoomHint.classList.toggle("show", show);
+      var c = map.getCenter();
+      if (state.parcels && map.getZoom() >= 8 && inBavaria(c.lng, c.lat)) {
+        zoomHint.textContent = "Bayern stellt Flurstücke nicht als offene Daten bereit: " +
+          "Grenzen nur als Kartenbild, ohne Auswahl.";
+        zoomHint.classList.add("show");
+        return;
+      }
+      zoomHint.textContent = ZOOM_HINT;
+      zoomHint.classList.toggle("show", state.parcels && map.getZoom() < PARCEL_MINZOOM);
     }
 
     // ---- Parcel panel ----
