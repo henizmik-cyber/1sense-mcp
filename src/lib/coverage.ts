@@ -22,7 +22,20 @@ export const LAND_NAMES: Record<string, string> = {
 
 /** Länder whose parcels are ingested (prefix). Extend as Länder are loaded;
  * shard routing in shards.ts works for every non-Bavarian prefix already. */
-export const INGESTED_LANDS = new Set<string>(["05"]);
+export const INGESTED_LANDS = new Set<string>([
+  "02", // Hamburg
+  "03", // Niedersachsen
+  "04", // Bremen
+  "05", // Nordrhein-Westfalen
+  "07", // Rheinland-Pfalz
+  "10", // Saarland
+  "11", // Berlin
+  "12", // Brandenburg
+  "13", // Mecklenburg-Vorpommern
+  "14", // Sachsen
+  "15", // Sachsen-Anhalt
+  "16", // Thüringen
+]);
 
 /** Covered status value for a Land: "NRW" is kept for compatibility. */
 export function coverageStatusForLand(prefix: string): string {
@@ -30,7 +43,15 @@ export function coverageStatusForLand(prefix: string): string {
 }
 
 /** Länder whose Bodenrichtwerte are loaded, with the Stichtag in use. */
-export const BRW_LANDS: Record<string, string> = { "05": "2026-01-01" };
+export const BRW_LANDS: Record<string, string> = {
+  "02": "2026-01-01", // Hamburg
+  "05": "2026-01-01", // Nordrhein-Westfalen
+  "06": "2024-01-01", // Hessen — newest Stichtag published as data (2026 is viewer-only)
+  "11": "2026-01-01", // Berlin
+  "12": "2026-01-01", // Brandenburg
+  "15": "2026-01-01", // Sachsen-Anhalt
+  "16": "2026-01-01", // Thüringen
+};
 
 /**
  * Länder that publish no open Bodenrichtwert polygons (verified 2026-11-28):

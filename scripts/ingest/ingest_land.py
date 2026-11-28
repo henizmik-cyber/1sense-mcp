@@ -353,11 +353,14 @@ def run_gml(src: Path, sink: Sink, crs: int, axis_latlon: bool) -> None:
             if spec is None:
                 # Keep memory flat: drop every finished feature we are not
                 # interested in — top-level ones and those wrapped in
-                # (gml:)featureMember/member (NAS buildings, land use, …).
+                # (gml:)featureMember/member (NAS extracts) or wfs:Insert/
+                # Replace/Update (NAS update deliveries, e.g. Hessen's NBA files,
+                # where ~337k buildings/land-use objects precede the parcels).
                 parent = elem.getparent()
                 if parent is not None and (
                     parent is root
-                    or localname(parent.tag) in ("featureMember", "member", "featureMembers")
+                    or localname(parent.tag) in ("featureMember", "member", "featureMembers",
+                                                 "Insert", "Replace", "Update")
                 ):
                     elem.clear()
                     parent.remove(elem)

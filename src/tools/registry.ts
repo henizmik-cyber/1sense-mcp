@@ -28,7 +28,7 @@ export const TOOLS: ToolDef[] = [
     name: "search_parcels",
     annotations: { title: "Search parcels", readOnlyHint: true },
     description:
-      "Search German land parcels (Flurstücke) by city or bounding box, with optional size filters. Coverage v1: all of NRW. Returns parcel ids, sizes, municipality, centroid and map links.",
+      "Search German land parcels (Flurstücke) by city or bounding box, with optional size filters. Coverage: most of Germany from the Länder's open cadastre data — Bavaria publishes none; the response's coverage_note lists the Länder loaded. Returns parcel ids, sizes, municipality, centroid and map links.",
     schema: {
       city: z
         .string()
@@ -53,7 +53,7 @@ export const TOOLS: ToolDef[] = [
     name: "get_parcel",
     annotations: { title: "Get parcel details", readOnlyHint: true },
     description:
-      "Look up one parcel by Flurstückskennzeichen: geometry (GeoJSON), size, Gemarkung/Flur, approximate neighbors, map link. Coverage v1: NRW.",
+      "Look up one parcel by Flurstückskennzeichen: geometry (GeoJSON), size, Gemarkung/Flur, approximate neighbors, map link. Coverage: most of Germany (not Bavaria); every response states its coverage.",
     schema: {
       parcel_id: z
         .string()
@@ -65,7 +65,7 @@ export const TOOLS: ToolDef[] = [
     name: "get_bodenrichtwert",
     annotations: { title: "Get Bodenrichtwert (land value)", readOnlyHint: true },
     description:
-      "Official standard land value (Bodenrichtwert) for a parcel id or WGS84 point: EUR/m², Stichtag (Stand), Nutzungsart. Source: BORIS-NRW. Coverage v1: NRW.",
+      "Official standard land value (Bodenrichtwert) for a parcel id or WGS84 point: EUR/m², Stichtag (Stand), Nutzungsart, with the source per Land. Available only where a Land publishes Bodenrichtwerte as open data (e.g. NRW, Hamburg, Hessen, Berlin, Brandenburg, Sachsen-Anhalt, Thüringen); elsewhere the response says why none is available.",
     schema: {
       parcel_id: z.string().optional().describe("Flurstückskennzeichen (alternative to lat/lng)"),
       lat: z.number().min(-90).max(90).optional().describe("WGS84 latitude"),
@@ -87,7 +87,7 @@ export const TOOLS: ToolDef[] = [
     name: "estimate_buildable",
     annotations: { title: "Estimate buildable area", readOnlyHint: true },
     description:
-      "Rough gross-floor-area estimate for a parcel from default GRZ/floor values. Clearly labeled estimate; v1 has no zoning or LoD2 height data. Coverage v1: NRW.",
+      "Rough gross-floor-area estimate for a parcel from default GRZ/floor values. Clearly labeled estimate; no zoning or LoD2 height data is used. Coverage: wherever parcels are loaded (not Bavaria).",
     schema: {
       parcel_id: z.string().describe("Flurstückskennzeichen"),
     },

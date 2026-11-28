@@ -5,6 +5,7 @@ import { dispatchTool, toMcpResult } from "./lib/dispatch.js";
 import type { ToolContext } from "./lib/types.js";
 import { EMAIL_RE, accessPage, accessThanksPage } from "./access-page.js";
 import { mapPage } from "./map-page.js";
+import { sourcesPage } from "./sources-page.js";
 import { handleParcelApi, handleTileRequest } from "./map-api.js";
 
 export interface SessionProps extends Record<string, unknown> {
@@ -38,7 +39,8 @@ const INFO = {
   description:
     "Look up German land parcels, zoning values and company structures. Owner chains available via early access.",
   mcp_endpoint: "/mcp",
-  coverage: "NRW (v1); Bavaria: not-available (no open parcel data)",
+  coverage:
+    "Parcels: most of Germany from the Länder's open cadastre data; Bavaria: not-available (no open parcel data). Bodenrichtwerte: Länder that publish them openly.",
   docs: "https://1sensedata.com/mcp",
   access: "https://1sensedata.com/access",
 };
@@ -67,6 +69,12 @@ export default {
     if (url.pathname === "/map" || url.pathname === "/map/") {
       return new Response(mapPage(), {
         headers: { ...HTML_HEADERS, "cache-control": "public, max-age=300" },
+      });
+    }
+
+    if (url.pathname === "/map/quellen") {
+      return new Response(sourcesPage(), {
+        headers: { ...HTML_HEADERS, "cache-control": "public, max-age=3600" },
       });
     }
 

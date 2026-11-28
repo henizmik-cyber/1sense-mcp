@@ -8,10 +8,13 @@ site acquisition, deal screening, collateral checks and expansion planning in
 Germany.
 
 - **Endpoint:** `https://1sensedata.com/mcp`
-- **Coverage (v1):** all of Nordrhein-Westfalen (NRW) — every Kreis and
-  kreisfreie Stadt, ~9.4M parcels. Bavaria publishes no open parcel data —
-  requests there return `coverage: "not-available"`. Every response states its
-  coverage.
+- **Coverage:** parcels from the open cadastre data of every Land except
+  Bavaria (which publishes none — requests there return
+  `coverage: "not-available"`); Länder are added as their data is loaded (see
+  `INGESTED_LANDS` in `src/lib/coverage.ts`). Bodenrichtwerte only where a Land
+  publishes them openly: NRW, Hamburg, Hessen (2024), Berlin, Brandenburg,
+  Sachsen-Anhalt, Thüringen. Every response states its coverage; for Länder
+  without open Bodenrichtwerte it says why.
 - **Access tiers:** anonymous use is limited to 10 tool calls per day per IP;
   `request_access` (always available) is how you get early access and higher
   limits.
@@ -82,13 +85,16 @@ owner-chain previews carry counts and structure depth only.
 ## Map explorer
 
 `https://1sensedata.com/map` — the product's visible face: a full-bleed
-MapLibre map of all NRW parcels and Bodenrichtwert zones in the 1Sense
-ink-on-paper look. Every parcel click shows open facts plus the locked owner
-card that funnels to `/access`. No personal data is rendered anywhere.
+MapLibre map of the loaded Länder's parcels and Bodenrichtwert zones in the
+1Sense ink-on-paper look. Every parcel click shows open facts plus the locked
+owner card that funnels to `/access`. No personal data is rendered anywhere.
+`/map/quellen` lists every source with its required attribution and license
+(several Länder use CC BY 4.0 / dl-de/by-2.0); the map links to it.
 
 - **Views:** Karte (OpenFreeMap Liberty, recolored client-side to the sand
   palette) and Satellit (Geobasis NRW DOP WMTS, dl-de/zero-2.0; its tile
-  matrix identifiers are web zoom − 5, mapped in `transformRequest`).
+  matrix identifiers are web zoom − 5, mapped in `transformRequest`). Satellit
+  is NRW-only for now and greyed out elsewhere.
 - **Vector tiles:** three PMTiles files in R2 (`tiles/parcels.pmtiles` z13–16,
   `tiles/brw.pmtiles` z8–14, `tiles/buildings.pmtiles` z13–16), built by
   tippecanoe from the ingest pipeline's NDJSON output (`out/tiles/*.ndjson`)
@@ -120,6 +126,13 @@ python3 upload_tiles.py               # same S3 credentials as upload_r2.py
 ```
 
 ## Data sources & licenses
+
+Parcels and Bodenrichtwerte come from each Land's own open-data portal; the
+full per-Land list with required attributions is served at `/map/quellen`
+(`src/sources-page.ts`). The national BKG product FS-DE is **not** open
+(V GeoBund only), and Bavaria sells its parcel data, so neither is used.
+Missing Gemeinde/Kreis names in INSPIRE-format Länder (RP, SL, TH) are filled
+from BKG VG250 (dl-de/by-2.0). NRW:
 
 | Data | Source | License |
 |---|---|---|
@@ -155,7 +168,7 @@ npm run db:migrate:remote
 npm run deploy
 ```
 
-## NRW ingestion
+## Ingestion (NRW)
 
 Offline Python pipeline (see `scripts/ingest/`):
 
@@ -178,6 +191,33 @@ python3 ingest_companies.py           # --limit N for smoke runs, --land "North 
 
 `upload_r2.py` wants `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
 `R2_SECRET_ACCESS_KEY` for the fast parallel path.
+
+## Other Länder
+
+Parcels beyond NRW live in four D1 shards (`DB_NORTH`, `DB_WEST`, `DB_BW`,
+`DB_EAST`, schema in `migrations-shard/`), routed by the Kennzeichen's Land
+prefix in `src/lib/shards.ts`; each shard stays far below D1's 10 GB cap.
+
+```bash
+cd scripts/ingest
+python3 download_lands.py sh          # also: he, sl, bw, be, th (other Länder are single
+                                      # downloads — every URL is in docs/germany-sources.md)
+python3 ingest_land.py --land 03 --src downloads/ni           # GPKG/Shape (OGR path)
+python3 ingest_land.py --land 07 --src downloads/rp --mode gml --crs 4258 --axis latlon
+python3 ingest_land.py --land 02 --src downloads/hh --mode gml --crs 25832   # raw NAS
+DB_NAME=onesense-p-north ./load_d1.sh remote out/sql-03
+
+python3 ingest_brw_land.py --land 06  # Bodenrichtwerte: 02 06 11 12 15 16
+./load_d1.sh remote out/sql-brw-06    # main DB (bodenrichtwerte.land, migration 0002)
+```
+
+Then add the Land to `INGESTED_LANDS` / `BRW_LANDS` in `src/lib/coverage.ts`,
+rebuild the PMTiles from all `out/tiles/parcels*.ndjson` / `brw*.ndjson`, and
+deploy. Format gotchas the ingesters handle: Hamburg pads the empty Flur with
+`_` (Kennzeichen are read by position), Sachsen numbers parcels with letters
+(`40a` → Nenner `000a`), Hessen's NAS update deliveries wrap features in
+`wfs:Insert`, INSPIRE Länder in EPSG:4258 list latitude first, and Hamburg's
+BRW CSV gives each of ~7 values per zone its own number (grouped by polygon).
 
 ## Architecture
 

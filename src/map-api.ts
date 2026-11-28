@@ -175,10 +175,15 @@ export async function handleParcelApi(
   // exact point-in-polygon against the zone geometry in R2).
   const ctx: ToolContext = { env, ip, country: "unknown" };
   let brwZones: unknown = null;
+  // True when the parcel's Land publishes no open Bodenrichtwerte (or none
+  // are loaded), so the panel can say so instead of silently omitting them.
+  let brwUnavailable = false;
   try {
     const envlp = await getBodenrichtwert(ctx, { parcel_id: parsed.normalized });
     if (envlp.ok && envlp.data) {
       brwZones = (envlp.data as { zones?: unknown }).zones ?? null;
+    } else if (envlp.ok && envlp.data === null) {
+      brwUnavailable = true;
     }
   } catch {
     brwZones = null; // panel degrades to parcel facts only
@@ -202,6 +207,7 @@ export async function handleParcelApi(
             : null,
       },
       brw_zones: brwZones,
+      brw_unavailable: brwUnavailable,
     },
     { headers: { "cache-control": "public, max-age=86400" } },
   );

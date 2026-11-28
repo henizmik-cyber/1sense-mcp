@@ -148,6 +148,6 @@ export function accessThanksPage(): string {
     <p>1Sense opens to a small group first. We will write to you when your
     access is ready.</p>
     <p>Until then, the open tools are live: parcel search, Bodenrichtwerte and
-    the company register for all of Nordrhein-Westfalen.</p>
+    the company register across Germany.</p>
   </div>`);
 }

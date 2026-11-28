@@ -16,7 +16,7 @@ export function mapPage(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>1Sense — Karten-Explorer</title>
-<meta name="description" content="Flurstücke und Bodenrichtwerte für ganz NRW auf einer Karte. Wem ein Grundstück gehört, beantwortet 1Sense im Early Access.">
+<meta name="description" content="Flurstücke und Bodenrichtwerte für Deutschland auf einer Karte. Wem ein Grundstück gehört, beantwortet 1Sense im Early Access.">
 <link rel="canonical" href="https://1sensedata.com/map">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=petrona:400,600|instrument-sans:400,500&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css">
@@ -209,7 +209,7 @@ a { color: inherit; }
 
 <header class="card brand">
   <a class="wordmark" href="https://1sensedata.com/">1Sense</a>
-  <div class="tagline">Flurstücke &amp; Bodenrichtwerte · NRW</div>
+  <div class="tagline">Flurstücke &amp; Bodenrichtwerte · Deutschland</div>
   <div class="hint" id="zoomHint">Näher heranzoomen, um Flurstücke zu sehen und auszuwählen.</div>
 </header>
 
@@ -243,7 +243,7 @@ a { color: inherit; }
     <p>Die Eigentümerkette – vom Flurstück bis zur Gesellschaft, die dahintersteht – ist Teil des Early Access.</p>
     <a class="locked-cta" href="https://1sensedata.com/access">Early Access anfordern</a>
   </div>
-  <div class="panel-note">Quellen: ALKIS NRW, BORIS-NRW · © Geobasis NRW (dl-de/zero-2.0). Keine Eigentümerdaten auf dieser Karte.</div>
+  <div class="panel-note">Quellen: amtliche Liegenschaftskataster und Bodenrichtwerte der Länder · <a href="/map/quellen">Quellen &amp; Lizenzen</a>. Keine Eigentümerdaten auf dieser Karte.</div>
 </aside>
 
 <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
@@ -462,13 +462,13 @@ a { color: inherit; }
       map.addSource("brw", {
         type: "vector",
         url: "pmtiles://" + origin + "/map/tiles/brw.pmtiles",
-        attribution: "Bodenrichtwerte: BORIS-NRW © Geobasis NRW (dl-de/zero-2.0)"
+        attribution: 'Bodenrichtwerte: amtliche Gutachterausschüsse der Länder'
       });
       map.addSource("parcels", {
         type: "vector",
         url: "pmtiles://" + origin + "/map/tiles/parcels.pmtiles",
         promoteId: "id",
-        attribution: "Flurstücke: ALKIS © Geobasis NRW (dl-de/zero-2.0)"
+        attribution: 'Flurstücke: ALKIS © GeoBasis-DE / Vermessungsverwaltungen der Länder, © GeoBasis-DE / BKG · <a href="/map/quellen">Quellen &amp; Lizenzen</a>'
       });
       map.addSource("buildings", {
         type: "vector",
@@ -747,6 +747,8 @@ a { color: inherit; }
             html += factRow("Weitere Zone", fmtEur(zones[i].brw_eur_m2));
           }
         }
+      } else if (data.brw_unavailable) {
+        html += factRow("Bodenrichtwert", "nicht offen veröffentlicht");
       }
       html += "</dl>";
       panelBody.innerHTML = html;
