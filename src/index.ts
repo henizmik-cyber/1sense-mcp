@@ -79,7 +79,7 @@ export default {
     }
 
     if (url.pathname.startsWith("/map/tiles/")) {
-      return handleTileRequest(request, env, url.pathname.slice("/map/tiles/".length));
+      return handleTileRequest(request, env, url.pathname.slice("/map/tiles/".length), ctx);
     }
 
     if (url.pathname === "/map/api/parcel") {

@@ -17,12 +17,66 @@ import type { ToolContext } from "./lib/types.js";
 /** Tileset files served from the onesense-geo bucket under tiles/. */
 const TILESETS = new Set(["parcels.pmtiles", "brw.pmtiles", "buildings.pmtiles"]);
 
-const TILE_CACHE = "public, max-age=3600";
+const TILE_CACHE = "public, max-age=300";
+
+/**
+ * Edge cache for tile ranges. A cold R2 range read costs ~0.6-1.5 s and a
+ * map load chains several (header -> directory -> tiles, per tileset), so
+ * ranges are kept in the Cloudflare cache. Two constraints shape this:
+ * the Cache API refuses 206 responses (ranges are stored as 200 and the 206
+ * is rebuilt), and keys must include the object's etag so a re-uploaded
+ * tileset never mixes old and new bytes.
+ */
+const EDGE_TTL_S = 86_400;
+const META_TTL_MS = 60_000;
+const MAX_CACHED_RANGE = 8 * 1024 * 1024;
+const tileMeta = new Map<string, { etag: string; size: number; at: number }>();
+
+/** Test hook: forget remembered tileset versions. */
+export function _resetTileMetaCache(): void {
+  tileMeta.clear();
+}
+
+async function currentMeta(env: Env, key: string, refresh = false) {
+  const hit = tileMeta.get(key);
+  if (hit && !refresh && Date.now() - hit.at < META_TTL_MS) return hit;
+  const head = await env.GEO.head(key);
+  if (!head) {
+    tileMeta.delete(key);
+    return null;
+  }
+  const meta = { etag: head.etag, size: head.size, at: Date.now() };
+  tileMeta.set(key, meta);
+  return meta;
+}
+
+function rangeResponse(
+  body: BodyInit | null,
+  offset: number,
+  length: number,
+  size: number,
+  etag: string,
+  cacheState: "hit" | "miss" | "bypass",
+): Response {
+  return new Response(body, {
+    status: 206,
+    headers: {
+      "content-type": "application/octet-stream",
+      "content-range": `bytes ${offset}-${offset + length - 1}/${size}`,
+      "content-length": String(length),
+      "accept-ranges": "bytes",
+      "cache-control": TILE_CACHE,
+      etag: `"${etag}"`,
+      "x-tile-cache": cacheState,
+    },
+  });
+}
 
 export async function handleTileRequest(
   request: Request,
   env: Env,
   name: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   if (!TILESETS.has(name)) {
     return Response.json({ error: "not_found" }, { status: 404 });
@@ -55,6 +109,13 @@ export async function handleTileRequest(
   const offset = Number(m[1]);
   const end = m[2] === "" ? null : Number(m[2]);
 
+  // Cached path: bounded ranges (all the pmtiles client sends) of sane size.
+  if (request.method === "GET" && end !== null && end >= offset &&
+      end - offset + 1 <= MAX_CACHED_RANGE) {
+    const cached = await cachedRange(env, key, offset, end, ctx);
+    if (cached) return cached;
+  }
+
   let obj: R2ObjectBody | null = null;
   try {
     obj = await env.GEO.get(
@@ -77,17 +138,52 @@ export async function handleTileRequest(
     return new Response("Range not satisfiable", { status: 416 });
   }
 
-  return new Response(request.method === "HEAD" ? null : obj.body, {
-    status: 206,
-    headers: {
-      "content-type": "application/octet-stream",
-      "content-range": `bytes ${offset}-${offset + length - 1}/${size}`,
-      "content-length": String(length),
-      "accept-ranges": "bytes",
-      "cache-control": TILE_CACHE,
-      etag: obj.httpEtag,
-    },
-  });
+  return rangeResponse(request.method === "HEAD" ? null : obj.body, offset, length,
+    size, obj.etag, "bypass");
+}
+
+/** Serves one range from the edge cache, filling it from R2 on a miss.
+ * Returns null when the caller should fall back to a plain R2 read
+ * (out-of-range request, object gone). */
+async function cachedRange(
+  env: Env,
+  key: string,
+  offset: number,
+  end: number,
+  ctx?: ExecutionContext,
+): Promise<Response | null> {
+  const cache = (caches as unknown as { default: Cache }).default;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const meta = await currentMeta(env, key, attempt > 0);
+    if (!meta || offset >= meta.size) return null;
+    const length = Math.min(end, meta.size - 1) - offset + 1;
+    const cacheKey = new Request(
+      `https://tile-cache.1sensedata.internal/${encodeURIComponent(key)}/${meta.etag}/${offset}-${offset + length - 1}`,
+    );
+
+    const hit = await cache.match(cacheKey);
+    if (hit) return rangeResponse(hit.body, offset, length, meta.size, meta.etag, "hit");
+
+    // etagMatches guards against the object being replaced between head()
+    // and get(): on a mismatch R2 returns metadata without a body.
+    const obj = await env.GEO.get(key, {
+      range: { offset, length },
+      onlyIf: { etagMatches: meta.etag },
+    });
+    if (!obj) return null;
+    if (!("body" in obj)) continue; // replaced meanwhile: refresh version, retry
+    const bytes = await (obj as R2ObjectBody).arrayBuffer();
+    const store = cache.put(cacheKey, new Response(bytes, {
+      headers: {
+        "content-type": "application/octet-stream",
+        "cache-control": `public, max-age=${EDGE_TTL_S}`,
+      },
+    }));
+    if (ctx) ctx.waitUntil(store);
+    else await store;
+    return rangeResponse(bytes, offset, length, meta.size, meta.etag, "miss");
+  }
+  return null;
 }
 
 interface PanelParcelRow {

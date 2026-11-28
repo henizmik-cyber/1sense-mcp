@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { handleParcelApi, handleTileRequest } from "../src/map-api.js";
+import { _resetTileMetaCache, handleParcelApi, handleTileRequest } from "../src/map-api.js";
 import { mapPage } from "../src/map-page.js";
 import { dispatchTool } from "../src/lib/dispatch.js";
 import { ANON_DAILY_LIMIT } from "../src/lib/ratelimit.js";
@@ -59,6 +59,43 @@ describe("PMTiles range proxy (/map/tiles/*)", () => {
       "secret.pmtiles",
     );
     expect(res.status).toBe(404);
+  });
+
+  it("serves a repeated range from the edge cache, byte-identical", async () => {
+    _resetTileMetaCache();
+    const req = () => tileRequest("/map/tiles/parcels.pmtiles", { range: "bytes=40-49" });
+    const first = await handleTileRequest(req(), env, "parcels.pmtiles");
+    expect(first.headers.get("x-tile-cache")).toBe("miss");
+    const firstBytes = Array.from(new Uint8Array(await first.arrayBuffer()));
+    const second = await handleTileRequest(req(), env, "parcels.pmtiles");
+    expect(second.status).toBe(206);
+    expect(second.headers.get("x-tile-cache")).toBe("hit");
+    expect(second.headers.get("content-range")).toBe("bytes 40-49/100");
+    expect(Array.from(new Uint8Array(await second.arrayBuffer()))).toEqual(firstBytes);
+  });
+
+  it("serves a re-uploaded tileset fresh once its version is re-read", async () => {
+    _resetTileMetaCache();
+    const req = () => tileRequest("/map/tiles/parcels.pmtiles", { range: "bytes=0-3" });
+    await handleTileRequest(req(), env, "parcels.pmtiles"); // caches old bytes
+    await env.GEO.put("tiles/parcels.pmtiles", new Uint8Array(100).fill(7));
+    _resetTileMetaCache(); // what the 60 s version TTL does in production
+    const res = await handleTileRequest(req(), env, "parcels.pmtiles");
+    expect(res.headers.get("x-tile-cache")).toBe("miss");
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual([7, 7, 7, 7]);
+  });
+
+  it("never mixes versions when the file changes between version check and read", async () => {
+    _resetTileMetaCache();
+    // Learn the current version, then replace the object behind its back.
+    await handleTileRequest(
+      tileRequest("/map/tiles/parcels.pmtiles", { range: "bytes=0-0" }), env, "parcels.pmtiles");
+    await env.GEO.put("tiles/parcels.pmtiles", new Uint8Array(100).fill(9));
+    const res = await handleTileRequest(
+      tileRequest("/map/tiles/parcels.pmtiles", { range: "bytes=60-63" }), env, "parcels.pmtiles");
+    expect(res.status).toBe(206);
+    // The etag guard detects the swap and re-reads: new bytes, new etag.
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual([9, 9, 9, 9]);
   });
 
   it("rejects a range starting past the end", async () => {
